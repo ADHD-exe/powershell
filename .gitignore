@@ -1,0 +1,16 @@
+.history/
+.vscode/
+*.log
+*.tmp
+*.bak
+*.cache
+.DS_Store
+Thumbs.db
+
+# Installed PowerShell modules (installed by the profile/bootstrap, not committed)
+Modules/
+Scripts/
+
+# Machine-specific package snapshots / UniGetUI exports
+bootstrap-packages/wingit-list.txt
+bootstrap-packages/pwshpack.ps1
