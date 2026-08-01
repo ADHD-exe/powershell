@@ -261,6 +261,13 @@ $Packages = @(
         ChocoId    = ""
         Source     = "msstore"
         DetectAppx = "Microsoft.OutlookForWindows"
+    },
+    @{
+        Name      = "winaero tweaker"
+        Command   = ""
+        WingetId  = "winaero.tweaker"
+        ChocoId   = ""
+        TestPaths = @("$env:ProgramFiles\Winaero Tweaker\WinaeroTweaker.exe")
     }
 )
 
@@ -428,6 +435,181 @@ else {
     else {
         Write-Warning "⚠️ Windows Terminal LocalState not found: $localState (start Windows Terminal once, then re-run)."
     }
+}
+
+# =========================================================
+# 🛠️  Winaero Tweaker settings (applied via registry)
+# =========================================================
+
+function Read-Ini {
+    param([string]$Path)
+
+    $ini     = @{}
+    $section = ""
+
+    foreach ($line in Get-Content -LiteralPath $Path) {
+
+        $line = $line.Trim()
+
+        if ($line -match '^\[(.+)\]$') {
+            $section       = $Matches[1]
+            $ini[$section] = @{}
+            continue
+        }
+
+        if ($line -match '^([^=;#]+?)\s*=\s*(.*)$') {
+            $ini[$section][$Matches[1].Trim()] = $Matches[2].Trim()
+        }
+    }
+
+    return $ini
+}
+
+function Set-RegValue {
+    param(
+        [string]$Path,
+        [string]$Name,
+        $Value,
+        [string]$Type = "DWord"
+    )
+
+    New-Item -Path $Path -Force | Out-Null
+    New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+}
+
+$iniPath = Join-Path $RepoRoot "bootstrap-packages\Winaero-Tweaker-Settings.ini"
+
+if (-not (Test-Path -LiteralPath $iniPath)) {
+    Write-Warning "⚠️ Winaero-Tweaker-Settings.ini not found in bootstrap-packages; skipping tweaks."
+}
+else {
+
+    Write-Host "`n== Winaero Tweaker settings ==" -ForegroundColor Cyan
+
+    $ini = Read-Ini -Path $iniPath
+
+    # Ads / suggestions / unwanted apps
+    if ($ini["pageAdsUnwantedApps"]) {
+
+        $cdm = "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
+
+        $adsMap = @{
+            "UnwantedAppsDisabled"     = "SilentInstalledAppsEnabled"
+            "FileExplorerAdsDisabled"  = "SubscribedContent-338389Enabled"
+            "LockScreenAdsDisabled"    = "RotatingLockScreenEnabled"
+            "StartSuggestionsDisabled" = "SystemPaneSuggestionsEnabled"
+            "TipsAboutWindowsDisabled" = "SubscribedContent-338388Enabled"
+            "WelcomePageDisabled"      = "SubscribedContent-310093Enabled"
+            "SettingsAdsDisabled"      = "SoftLandingEnabled"
+        }
+
+        $count = 0
+
+        foreach ($key in $adsMap.Keys) {
+            if ($ini["pageAdsUnwantedApps"][$key] -eq "1") {
+                Set-RegValue -Path $cdm -Name $adsMap[$key] -Value 0 -Type DWord
+                $count++
+            }
+        }
+
+        if ($ini["pageAdsUnwantedApps"]["TimelineSuggestionsDisabled"] -eq "1") {
+            Set-RegValue `
+                -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+                -Name "ShowSyncProviderNotifications" `
+                -Value 0 -Type DWord
+            $count++
+        }
+
+        if ($count -gt 0) {
+            Write-Host "✔ Ads, suggestions and unwanted apps disabled ($count)" -ForegroundColor Green
+        }
+    }
+
+    # SmartScreen for Microsoft Store apps
+    if ($ini["pageDisableSmartScreen"]["DisableSmartScreenInStore"] -eq "1") {
+        Set-RegValue `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\AppHost" `
+            -Name "EnableWebContentEvaluation" `
+            -Value 0 -Type DWord
+        Write-Host "✔ SmartScreen for Microsoft Store apps disabled" -ForegroundColor Green
+    }
+
+    # Explorer "New" menu items
+    if ($ini["pageExplorerNewMenu"]) {
+
+        $count = 0
+
+        foreach ($ext in ".bat", ".cmd", ".reg", ".vbs", ".ps1") {
+            if ($ini["pageExplorerNewMenu"][$ext] -eq "1") {
+                Set-RegValue -Path "HKCU:\Software\Classes\$ext\ShellNew" -Name "NullFile" -Value "" -Type String
+                $count++
+            }
+        }
+
+        if ($count -gt 0) {
+            Write-Host "✔ New-menu entries added for $count file types" -ForegroundColor Green
+        }
+    }
+
+    # "Run as administrator" context menu
+    if ($ini["pageContextMenuRunAsAdministrator"]) {
+
+        $runAs = @(
+            @{
+                Ext = "msi"
+                Key = "HKCU:\Software\Classes\msi_auto_file\Shell\runas"
+                Cmd = 'msiexec.exe /i "%1"'
+            },
+            @{
+                Ext = "vbs"
+                Key = "HKCU:\Software\Classes\SystemFileAssociations\.vbs\Shell\runas"
+                Cmd = 'wscript.exe "%1"'
+            },
+            @{
+                Ext = "ps1"
+                Key = "HKCU:\Software\Classes\SystemFileAssociations\.ps1\Shell\runas"
+                Cmd = '"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -NoExit -Command "if((Get-ExecutionPolicy) -ne ''AllSigned'') { Set-ExecutionPolicy -Scope Process Bypass }; & ''%1''"'
+            }
+        )
+
+        foreach ($entry in $runAs) {
+            if ($ini["pageContextMenuRunAsAdministrator"][$entry.Ext] -eq "1") {
+                New-Item -Path "$($entry.Key)\command" -Force | Out-Null
+                Set-Item -Path "$($entry.Key)\command" -Value $entry.Cmd
+                Set-RegValue -Path $entry.Key -Name "HasLUAShield" -Value "" -Type String
+                Write-Host "✔ 'Run as administrator' added for .$($entry.Ext)" -ForegroundColor Green
+            }
+        }
+    }
+
+    # "Run with PowerShell 7" for .ps1 files
+    if ($ini["pageContextMenuRunModifyPS1"]["AddPowerShell7"] -eq "1") {
+
+        $ps1Shell = "HKCU:\Software\Classes\SystemFileAssociations\.ps1\Shell\RunPowershell7"
+
+        New-Item -Path $ps1Shell -Force | Out-Null
+        Set-Item -Path $ps1Shell -Value "Run with PowerShell 7"
+        New-Item -Path "$ps1Shell\Command" -Force | Out-Null
+        Set-Item -Path "$ps1Shell\Command" -Value 'pwsh.exe -NoExit -Command "if((Get-ExecutionPolicy) -ne ''AllSigned'') { Set-ExecutionPolicy -Scope Process Bypass }; & ''%1''"'
+
+        if ($ini["pageContextMenuRunModifyPS1"]["ShowExtended"] -eq "1") {
+            Set-RegValue -Path $ps1Shell -Name "Extended" -Value "" -Type String
+        }
+
+        Write-Host "✔ 'Run with PowerShell 7' added for .ps1 files" -ForegroundColor Green
+    }
+
+    # Icon cache size
+    if ($ini["pageIconCacheSize"]["Max Cached Icons"]) {
+        Set-RegValue `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer" `
+            -Name "IconCacheSize" `
+            -Value ([int]$ini["pageIconCacheSize"]["Max Cached Icons"]) `
+            -Type DWord
+        Write-Host "✔ Icon cache size set to $($ini['pageIconCacheSize']['Max Cached Icons']) MB" -ForegroundColor Green
+    }
+
+    Write-Host "ℹ️  Context-menu and icon-cache changes need Explorer to restart (run 'rsex')." -ForegroundColor Yellow
 }
 
 # =========================================================
