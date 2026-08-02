@@ -24,7 +24,8 @@ PowerShell/
 │   ├── settings.json                  Windows Terminal template (deployed by bootstrap, path-tokenized)
 │   └── FiraCode/                      Bundled FiraCode Nerd Font (regular, Mono, Propo) — installed by bootstrap
 ├── bootstrap-packages/
-│   └── bootstrap.ps1                  One-time setup: 18 packages, modules, fonts, terminal settings, keybinds
+│   ├── bootstrap.ps1                  One-time setup: packages, modules, fonts, terminal settings, keybinds
+│   └── registry-tweaks.ps1            Standalone Winaero registry tweaks (prompted by the bootstrap)
 ├── LICENSE                            MIT
 ├── README.md
 └── .gitignore
@@ -34,9 +35,32 @@ PowerShell/
 
 ## Installation
 
-### 1. Copy the whole folder
+### 1. Quick install — copy, paste, run
 
-Clone or copy this entire folder (keep the subfolders intact) into your PowerShell 7 profile directory:
+Run this block from any PowerShell window (Windows PowerShell 5.1 or PowerShell 7). It downloads the repo, places it in your profile folder, and runs the bootstrap:
+
+```powershell
+# Requires git (install it first with: winget install -e --id Git.Git)
+$tmp  = Join-Path $env:TEMP "rabbit-profile"
+$dst  = Join-Path $HOME "Documents\PowerShell"
+git clone --depth 1 https://github.com/ADHD-exe/powershell.git $tmp
+New-Item -ItemType Directory -Path $dst -Force | Out-Null
+Copy-Item -Path "$tmp\*" -Destination $dst -Recurse -Force
+Remove-Item -Path $tmp -Recurse -Force
+$shell = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+& $shell -NoProfile -ExecutionPolicy Bypass -File "$dst\bootstrap-packages\bootstrap.ps1"
+```
+
+If you ran it from Windows PowerShell, the bootstrap will install PowerShell 7 as part of its package list — open a new `pwsh` window afterwards to start using the profile.
+
+> Notes:
+> - The repo is self-contained and path-relative, so it works from any location; placing it at `$HOME\Documents\PowerShell` just makes it load automatically as your profile.
+> - If your Documents folder is redirected to OneDrive, the profile will live under `$HOME\OneDrive\Documents\PowerShell` instead — move the files there (or see the manual steps below).
+> - No admin rights are required: every registry and font change the bootstrap makes is per-user (`HKCU`).
+
+### 2. Manual install
+
+Copy this entire folder (keep the subfolders intact) into your PowerShell 7 profile directory:
 
 ```text
 $PROFILE        → C:\Users\<you>\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
@@ -45,7 +69,7 @@ profile folder  → C:\Users\<you>\Documents\PowerShell\
 
 Use `$PROFILE` to find the exact location on your machine. If your Documents folder is redirected to OneDrive, the profile lives under `$HOME\OneDrive\Documents\PowerShell` — that's fine, everything is resolved relative to the profile folder.
 
-### 2. Run the bootstrap script
+Then run the bootstrap script:
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File .\bootstrap-packages\bootstrap.ps1
@@ -59,6 +83,7 @@ The bootstrap installs anything that's missing and is safe to re-run (every step
 - **FiraCode Nerd Fonts**: installs the bundled fonts from `color.schemes-fonts\FiraCode` per-user (no admin needed) and registers them in the current-user font registry
 - **Windows Terminal settings**: deploys `color.schemes-fonts\settings.json` into the Terminal's `LocalState` folder (backing up any existing file), token-replacing the username so it's portable — all profiles use **FiraCode Nerd Font** and minimize to the notification area (tray) instead of the taskbar
 - **AutoHotkey keybinds**: writes `Documents\AutoHotkey\keybinds.ahk` with detected app paths, validates it via Ahk2Exe, registers a startup shortcut, sets the `DisabledHotkeys` registry value to free up the `Win+...` combos, and adds Everything's CLI (`es.exe`) to the user PATH
+- **Registry tweaks (optional)**: the bootstrap prompts whether to run `bootstrap-packages\registry-tweaks.ps1`, which applies the Winaero privacy / context-menu / icon-cache tweaks from `Winaero-Tweaker-Settings.ini` — per-user (`HKCU`), no admin required, and idempotent (each value is read before it is written)
 
 ### 3. Restart PowerShell
 
