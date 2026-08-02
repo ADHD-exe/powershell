@@ -83,12 +83,15 @@ if (Get-Command atuin -ErrorAction SilentlyContinue) {
 
 if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
 
-    oh-my-posh init pwsh `
-        --config "$PSScriptRoot\color.schemes-fonts\oh-my-rabbit.omp.json" |
-        Invoke-Expression
+    Invoke-Expression (& {
+        oh-my-posh init pwsh `
+            --config "$PSScriptRoot\color.schemes-fonts\oh-my-rabbit.omp.json" |
+            Out-String
+    })
 
     $null = & prompt 2>$null
 }
+
 
 Set-PSReadLineOption `
     -PredictionSource HistoryAndPlugin

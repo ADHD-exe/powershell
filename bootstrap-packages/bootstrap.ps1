@@ -106,6 +106,16 @@ function Install-PackageFallback {
         return
     }
 
+    # Skip if winget already has it registered as installed (catches packages
+    # whose command/path/appx detection misses) so we don't re-run installs.
+    if ($WingetId -and (Test-CommandExists "winget")) {
+        winget list --id $WingetId --exact --disable-interactivity --accept-source-agreements 2>$null | Out-Null
+
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+    }
+
     $installed = Install-WithWinget -Id $WingetId -Source $Source
 
     if (-not $installed -and $ChocoId -and $Source -eq "winget") {
@@ -268,6 +278,15 @@ $Packages = @(
         WingetId  = "winaero.tweaker"
         ChocoId   = ""
         TestPaths = @("$env:ProgramFiles\Winaero Tweaker\WinaeroTweaker.exe")
+    },
+    @{
+        Name      = "shutup10"
+        Command   = ""
+        WingetId  = "OO-Software.ShutUp10"
+        ChocoId   = ""
+        TestPaths = @(
+            "${env:ProgramFiles(x86)}\O&O ShutUp10\OOSU10.exe"
+        )
     }
 )
 
@@ -418,19 +437,24 @@ else {
             ""
         }
 
-        if ($existingContent -and ($existingContent -ne $content)) {
-            $backup = "$target.bak-$(Get-Date -Format "yyyyMMdd-HHmmss")"
-            Copy-Item -LiteralPath $target -Destination $backup
-            Write-Host "✔ Backed up existing settings → $(Split-Path $backup -Leaf)" -ForegroundColor Green
+        if ($existingContent -eq $content) {
+            Write-Host "✔ Windows Terminal settings already up to date" -ForegroundColor Green
         }
+        else {
+            if ($existingContent) {
+                $backup = "$target.bak-$(Get-Date -Format "yyyyMMdd-HHmmss")"
+                Copy-Item -LiteralPath $target -Destination $backup
+                Write-Host "✔ Backed up existing settings → $(Split-Path $backup -Leaf)" -ForegroundColor Green
+            }
 
-        [System.IO.File]::WriteAllText(
-            $target,
-            $content,
-            (New-Object System.Text.UTF8Encoding $false)
-        )
+            [System.IO.File]::WriteAllText(
+                $target,
+                $content,
+                (New-Object System.Text.UTF8Encoding $false)
+            )
 
-        Write-Host "✔ Deployed Windows Terminal settings → $target" -ForegroundColor Green
+            Write-Host "✔ Deployed Windows Terminal settings → $target" -ForegroundColor Green
+        }
     }
     else {
         Write-Warning "⚠️ Windows Terminal LocalState not found: $localState (start Windows Terminal once, then re-run)."
@@ -465,6 +489,25 @@ function Read-Ini {
     return $ini
 }
 
+function Get-RegValue {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    $key = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+
+    if (-not $key) {
+        return $null
+    }
+
+    return $key.GetValue($Name)
+}
+
 function Set-RegValue {
     param(
         [string]$Path,
@@ -473,8 +516,21 @@ function Set-RegValue {
         [string]$Type = "DWord"
     )
 
+    $current = Get-RegValue -Path $Path -Name $Name
+
+    if ($null -ne $current -and [string]$current -eq [string]$Value) {
+        return $false
+    }
+
     New-Item -Path $Path -Force | Out-Null
+
+    if ([string]::IsNullOrEmpty($Name)) {
+        Set-Item -Path $Path -Value $Value
+        return $true
+    }
+
     New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
+    return $true
 }
 
 $iniPath = Join-Path $RepoRoot "bootstrap-packages\Winaero-Tweaker-Settings.ini"
@@ -507,31 +563,40 @@ else {
 
         foreach ($key in $adsMap.Keys) {
             if ($ini["pageAdsUnwantedApps"][$key] -eq "1") {
-                Set-RegValue -Path $cdm -Name $adsMap[$key] -Value 0 -Type DWord
-                $count++
+                if (Set-RegValue -Path $cdm -Name $adsMap[$key] -Value 0 -Type DWord) {
+                    $count++
+                }
             }
         }
 
         if ($ini["pageAdsUnwantedApps"]["TimelineSuggestionsDisabled"] -eq "1") {
-            Set-RegValue `
+            if (Set-RegValue `
                 -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
                 -Name "ShowSyncProviderNotifications" `
-                -Value 0 -Type DWord
-            $count++
+                -Value 0 -Type DWord) {
+                $count++
+            }
         }
 
         if ($count -gt 0) {
             Write-Host "✔ Ads, suggestions and unwanted apps disabled ($count)" -ForegroundColor Green
         }
+        else {
+            Write-Host "✔ Ads, suggestions and unwanted apps already configured" -ForegroundColor Green
+        }
     }
 
     # SmartScreen for Microsoft Store apps
     if ($ini["pageDisableSmartScreen"]["DisableSmartScreenInStore"] -eq "1") {
-        Set-RegValue `
+        if (Set-RegValue `
             -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\AppHost" `
             -Name "EnableWebContentEvaluation" `
-            -Value 0 -Type DWord
-        Write-Host "✔ SmartScreen for Microsoft Store apps disabled" -ForegroundColor Green
+            -Value 0 -Type DWord) {
+            Write-Host "✔ SmartScreen for Microsoft Store apps disabled" -ForegroundColor Green
+        }
+        else {
+            Write-Host "✔ SmartScreen for Microsoft Store apps already disabled" -ForegroundColor Green
+        }
     }
 
     # Explorer "New" menu items
@@ -541,13 +606,17 @@ else {
 
         foreach ($ext in ".bat", ".cmd", ".reg", ".vbs", ".ps1") {
             if ($ini["pageExplorerNewMenu"][$ext] -eq "1") {
-                Set-RegValue -Path "HKCU:\Software\Classes\$ext\ShellNew" -Name "NullFile" -Value "" -Type String
-                $count++
+                if (Set-RegValue -Path "HKCU:\Software\Classes\$ext\ShellNew" -Name "NullFile" -Value "" -Type String) {
+                    $count++
+                }
             }
         }
 
         if ($count -gt 0) {
             Write-Host "✔ New-menu entries added for $count file types" -ForegroundColor Green
+        }
+        else {
+            Write-Host "✔ New-menu entries already configured" -ForegroundColor Green
         }
     }
 
@@ -574,10 +643,25 @@ else {
 
         foreach ($entry in $runAs) {
             if ($ini["pageContextMenuRunAsAdministrator"][$entry.Ext] -eq "1") {
-                New-Item -Path "$($entry.Key)\command" -Force | Out-Null
-                Set-Item -Path "$($entry.Key)\command" -Value $entry.Cmd
-                Set-RegValue -Path $entry.Key -Name "HasLUAShield" -Value "" -Type String
-                Write-Host "✔ 'Run as administrator' added for .$($entry.Ext)" -ForegroundColor Green
+
+                $cmdKey     = "$($entry.Key)\command"
+                $cmdChanged = (Get-RegValue -Path $cmdKey -Name "") -ne $entry.Cmd
+
+                if ($cmdChanged) {
+                    New-Item -Path $cmdKey -Force | Out-Null
+                    Set-Item -Path $cmdKey -Value $entry.Cmd
+                }
+
+                if (Set-RegValue -Path $entry.Key -Name "HasLUAShield" -Value "" -Type String) {
+                    $cmdChanged = $true
+                }
+
+                if ($cmdChanged) {
+                    Write-Host "✔ 'Run as administrator' added for .$($entry.Ext)" -ForegroundColor Green
+                }
+                else {
+                    Write-Host "✔ 'Run as administrator' already configured for .$($entry.Ext)" -ForegroundColor Green
+                }
             }
         }
     }
@@ -586,27 +670,49 @@ else {
     if ($ini["pageContextMenuRunModifyPS1"]["AddPowerShell7"] -eq "1") {
 
         $ps1Shell = "HKCU:\Software\Classes\SystemFileAssociations\.ps1\Shell\RunPowershell7"
+        $ps1Cmd   = 'pwsh.exe -NoExit -Command "if((Get-ExecutionPolicy) -ne ''AllSigned'') { Set-ExecutionPolicy -Scope Process Bypass }; & ''%1''"'
 
-        New-Item -Path $ps1Shell -Force | Out-Null
-        Set-Item -Path $ps1Shell -Value "Run with PowerShell 7"
-        New-Item -Path "$ps1Shell\Command" -Force | Out-Null
-        Set-Item -Path "$ps1Shell\Command" -Value 'pwsh.exe -NoExit -Command "if((Get-ExecutionPolicy) -ne ''AllSigned'') { Set-ExecutionPolicy -Scope Process Bypass }; & ''%1''"'
+        $changed = $false
 
-        if ($ini["pageContextMenuRunModifyPS1"]["ShowExtended"] -eq "1") {
-            Set-RegValue -Path $ps1Shell -Name "Extended" -Value "" -Type String
+        if ((Get-RegValue -Path $ps1Shell -Name "") -ne "Run with PowerShell 7") {
+            New-Item -Path $ps1Shell -Force | Out-Null
+            Set-Item -Path $ps1Shell -Value "Run with PowerShell 7"
+            $changed = $true
         }
 
-        Write-Host "✔ 'Run with PowerShell 7' added for .ps1 files" -ForegroundColor Green
+        $cmdKey = "$ps1Shell\Command"
+        if ((Get-RegValue -Path $cmdKey -Name "") -ne $ps1Cmd) {
+            New-Item -Path $cmdKey -Force | Out-Null
+            Set-Item -Path $cmdKey -Value $ps1Cmd
+            $changed = $true
+        }
+
+        if ($ini["pageContextMenuRunModifyPS1"]["ShowExtended"] -eq "1") {
+            if (Set-RegValue -Path $ps1Shell -Name "Extended" -Value "" -Type String) {
+                $changed = $true
+            }
+        }
+
+        if ($changed) {
+            Write-Host "✔ 'Run with PowerShell 7' added for .ps1 files" -ForegroundColor Green
+        }
+        else {
+            Write-Host "✔ 'Run with PowerShell 7' already configured for .ps1 files" -ForegroundColor Green
+        }
     }
 
     # Icon cache size
     if ($ini["pageIconCacheSize"]["Max Cached Icons"]) {
-        Set-RegValue `
+        if (Set-RegValue `
             -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer" `
             -Name "IconCacheSize" `
             -Value ([int]$ini["pageIconCacheSize"]["Max Cached Icons"]) `
-            -Type DWord
-        Write-Host "✔ Icon cache size set to $($ini['pageIconCacheSize']['Max Cached Icons']) MB" -ForegroundColor Green
+            -Type DWord) {
+            Write-Host "✔ Icon cache size set to $($ini['pageIconCacheSize']['Max Cached Icons']) MB" -ForegroundColor Green
+        }
+        else {
+            Write-Host "✔ Icon cache size already set to $($ini['pageIconCacheSize']['Max Cached Icons']) MB" -ForegroundColor Green
+        }
     }
 
     Write-Host "ℹ️  Context-menu and icon-cache changes need Explorer to restart (run 'rsex')." -ForegroundColor Yellow
@@ -696,9 +802,28 @@ $AhkScriptDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "AutoHot
 $AhkScript    = Join-Path $AhkScriptDir "keybinds.ahk"
 
 New-Item -ItemType Directory -Path $AhkScriptDir -Force | Out-Null
-Set-Content -Path $AhkScript -Value $AhkLines -Encoding UTF8
 
-Write-Host "✔ Wrote $AhkScript" -ForegroundColor Green
+$ahkContent = ($AhkLines -join "`r`n") + "`r`n"
+
+$existingAhk = if (Test-Path -LiteralPath $AhkScript) {
+    Get-Content -LiteralPath $AhkScript -Raw
+}
+else {
+    ""
+}
+
+if ($existingAhk -eq $ahkContent) {
+    Write-Host "✔ keybinds.ahk already up to date" -ForegroundColor Green
+}
+else {
+    [System.IO.File]::WriteAllText(
+        $AhkScript,
+        $ahkContent,
+        (New-Object System.Text.UTF8Encoding $false)
+    )
+
+    Write-Host "✔ Wrote $AhkScript" -ForegroundColor Green
+}
 
 $ahkExe = Resolve-PathOrEmpty @(
     "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
@@ -757,14 +882,21 @@ else {
 $disabledKey   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
 $disabledValue = "BCFMNPSTVXZQA"
 
-Set-ItemProperty `
-    -Path $disabledKey `
-    -Name "DisabledHotkeys" `
-    -Value $disabledValue `
-    -Type String `
-    -ErrorAction SilentlyContinue
+$currentDisabled = Get-RegValue -Path $disabledKey -Name "DisabledHotkeys"
 
-Write-Host "✔ DisabledHotkeys registry set to '$disabledValue'" -ForegroundColor Green
+if ($currentDisabled -eq $disabledValue) {
+    Write-Host "✔ DisabledHotkeys already set to '$disabledValue'" -ForegroundColor Green
+}
+else {
+    Set-ItemProperty `
+        -Path $disabledKey `
+        -Name "DisabledHotkeys" `
+        -Value $disabledValue `
+        -Type String `
+        -ErrorAction SilentlyContinue
+
+    Write-Host "✔ DisabledHotkeys registry set to '$disabledValue'" -ForegroundColor Green
+}
 
 # Everything CLI (es.exe) on the user PATH
 $everythingDir = "$env:ProgramFiles\Everything"
@@ -784,6 +916,60 @@ if (Test-Path -LiteralPath "$everythingDir\es.exe") {
     else {
         Write-Host "✔ '$everythingDir' already on user PATH" -ForegroundColor Green
     }
+}
+
+# =========================================================
+# 🧠  opencode memory system (git clone + configure)
+# =========================================================
+
+function Install-OpencodeMemorySystem {
+    $repoUrl = "https://github.com/ADHD-exe/opencode.git"
+    $target  = Join-Path $HOME "Documents\opencode"
+
+    Write-Host "`n== opencode memory system ==" -ForegroundColor Cyan
+
+    if (-not (Test-CommandExists "git")) {
+        Write-Warning "⚠️ git not found; skipping opencode memory system setup."
+        return
+    }
+
+    if (Test-Path -LiteralPath (Join-Path $target ".git")) {
+        Write-Host "ℹ️  opencode repo already present — pulling latest." -ForegroundColor Yellow
+        git -C $target pull --ff-only | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "⚠️ git pull failed; continuing with existing copy."
+        }
+    }
+    elseif (Test-Path -LiteralPath $target) {
+        Write-Warning "⚠️ $target exists but is not a git repo; skipping (won't overwrite)."
+        return
+    }
+    else {
+        Write-Host "ℹ️  Cloning opencode repo → $target" -ForegroundColor Yellow
+        git clone $repoUrl $target | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "⚠️ Failed to clone opencode repo."
+            return
+        }
+    }
+
+    $archive = Join-Path $target "scripts\archive.ps1"
+
+    if (Test-Path -LiteralPath $archive) {
+        & $archive
+        Write-Host "✔ opencode memory system configured (memories\ dirs + INDEX.md)" -ForegroundColor Green
+    }
+    else {
+        Write-Warning "⚠️ scripts\archive.ps1 not found; opencode memory system not configured."
+    }
+}
+
+$opencodeAnswer = Read-Host "`nInstall & configure the opencode memory system from https://github.com/ADHD-exe/opencode.git? (y/N)"
+
+if ($opencodeAnswer -match "^(y|yes)$") {
+    Install-OpencodeMemorySystem
 }
 
 Write-Host "`n✔ Bootstrap complete" -ForegroundColor Green
