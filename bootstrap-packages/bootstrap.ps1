@@ -287,6 +287,15 @@ $Packages = @(
         TestPaths = @(
             "${env:ProgramFiles(x86)}\O&O ShutUp10\OOSU10.exe"
         )
+    },
+    @{
+        Name      = "opencode"
+        Command   = "opencode"
+        WingetId  = "SST.opencode"
+        ChocoId   = ""
+        TestPaths = @(
+            "$env:LOCALAPPDATA\Microsoft\WinGet\Links\opencode.exe"
+        )
     }
 )
 
@@ -755,6 +764,68 @@ if (Test-Path -LiteralPath "$everythingDir\es.exe") {
 # 🌸  Freyja AI companion (git clone + configure)
 # =========================================================
 
+function Set-OpencodeFreyja {
+    param(
+        [string]$PersonaFile,
+        [string]$MemoryIndex
+    )
+
+    $configDir  = Join-Path $HOME ".config\opencode"
+    $configPath = @(
+        (Join-Path $configDir "opencode.json"),
+        (Join-Path $configDir "opencode.jsonc")
+    ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+
+    if (-not $configPath) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+        $configPath = Join-Path $configDir "opencode.json"
+    }
+
+    $raw = if (Test-Path -LiteralPath $configPath) {
+        Get-Content -LiteralPath $configPath -Raw
+    }
+    else {
+        ""
+    }
+
+    $persona   = $PersonaFile -replace "\\", "/"
+    $memoryIdx = $MemoryIndex -replace "\\", "/"
+    $wanted    = @($persona, $memoryIdx)
+
+    try {
+        $config = $raw | ConvertFrom-Json -ErrorAction Stop
+
+        $existing = @()
+        if ($config.PSObject.Properties["instructions"] -and $config.instructions) {
+            $existing = @($config.instructions)
+        }
+
+        $merged = @($existing + $wanted) | Where-Object { $_ } | Select-Object -Unique
+
+        $needsWrite = [bool]($wanted | Where-Object { $existing -notcontains $_ })
+
+        if ($needsWrite) {
+            $config | Add-Member -NotePropertyName "instructions" -NotePropertyValue @($merged) -Force
+
+            $out = $config | ConvertTo-Json -Depth 12
+
+            [System.IO.File]::WriteAllText(
+                $configPath,
+                $out + "`n",
+                (New-Object System.Text.UTF8Encoding $false)
+            )
+
+            Write-Host "✔ Registered Freyja in opencode config → $configPath" -ForegroundColor Green
+        }
+        else {
+            Write-Host "✔ Freyja already registered in opencode config" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Warning "⚠️ Couldn't read opencode config as JSON; add the Freyja files to its 'instructions' manually."
+    }
+}
+
 function Install-Freyja {
     $repoUrl = "git@github.com:ADHD-exe/freyja.git"
     $target  = Join-Path $HOME "Documents\freyja"
@@ -796,6 +867,16 @@ function Install-Freyja {
     }
     else {
         Write-Warning "⚠️ memories\scripts\archive.ps1 not found; Freyja memory system not configured."
+    }
+
+    $personaFile = Join-Path $target "Freyja.txt"
+    $memoryIndex = Join-Path $target "memories\INDEX.md"
+
+    if ((Test-Path -LiteralPath $personaFile) -and (Test-Path -LiteralPath $memoryIndex)) {
+        Set-OpencodeFreyja -PersonaFile $personaFile -MemoryIndex $memoryIndex
+    }
+    else {
+        Write-Warning "⚠️ Freyja persona or memory index missing; opencode won't load Freyja."
     }
 }
 
