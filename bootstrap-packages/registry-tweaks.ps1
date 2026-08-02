@@ -66,7 +66,9 @@ function Set-RegValue {
         return $false
     }
 
-    New-Item -Path $Path -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
 
     if ([string]::IsNullOrEmpty($Name)) {
         Set-Item -Path $Path -Value $Value
@@ -192,7 +194,9 @@ if ($ini["pageContextMenuRunAsAdministrator"]) {
             $cmdChanged = (Get-RegValue -Path $cmdKey -Name "") -ne $entry.Cmd
 
             if ($cmdChanged) {
-                New-Item -Path $cmdKey -Force | Out-Null
+                if (-not (Test-Path -LiteralPath $cmdKey)) {
+                    New-Item -Path $cmdKey -Force | Out-Null
+                }
                 Set-Item -Path $cmdKey -Value $entry.Cmd
             }
 
@@ -219,14 +223,18 @@ if ($ini["pageContextMenuRunModifyPS1"]["AddPowerShell7"] -eq "1") {
     $changed = $false
 
     if ((Get-RegValue -Path $ps1Shell -Name "") -ne "Run with PowerShell 7") {
-        New-Item -Path $ps1Shell -Force | Out-Null
+        if (-not (Test-Path -LiteralPath $ps1Shell)) {
+            New-Item -Path $ps1Shell -Force | Out-Null
+        }
         Set-Item -Path $ps1Shell -Value "Run with PowerShell 7"
         $changed = $true
     }
 
     $cmdKey = "$ps1Shell\Command"
     if ((Get-RegValue -Path $cmdKey -Name "") -ne $ps1Cmd) {
-        New-Item -Path $cmdKey -Force | Out-Null
+        if (-not (Test-Path -LiteralPath $cmdKey)) {
+            New-Item -Path $cmdKey -Force | Out-Null
+        }
         Set-Item -Path $cmdKey -Value $ps1Cmd
         $changed = $true
     }

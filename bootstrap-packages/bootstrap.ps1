@@ -351,7 +351,7 @@ function Install-FontsFromFolder {
 
     if (-not (Test-Path -LiteralPath $SourceDir)) {
         Write-Warning "⚠️ Font source folder not found: $SourceDir"
-        return
+        return $false
     }
 
     $fontFiles = Get-ChildItem -LiteralPath $SourceDir -File -ErrorAction SilentlyContinue |
@@ -359,7 +359,7 @@ function Install-FontsFromFolder {
 
     if (-not $fontFiles) {
         Write-Warning "⚠️ No .ttf/.otf fonts found in $SourceDir"
-        return
+        return $false
     }
 
     Add-Type -AssemblyName PresentationCore
@@ -369,12 +369,15 @@ function Install-FontsFromFolder {
 
     $fontsKey = "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts"
 
+    $changed = $false
+
     foreach ($font in $fontFiles) {
 
         $dest = Join-Path $fontDir $font.Name
 
         if (-not (Test-Path -LiteralPath $dest)) {
             Copy-Item -LiteralPath $font.FullName -Destination $dest
+            $changed = $true
         }
 
         try {
@@ -390,16 +393,19 @@ function Install-FontsFromFolder {
 
         if (-not $existing -or ($existing.$valueName -ne $font.Name)) {
             New-ItemProperty -Path $fontsKey -Name $valueName -Value $font.Name -PropertyType String -Force | Out-Null
+            $changed = $true
         }
     }
 
     Write-Host "✔ Installed $($fontFiles.Count) fonts from $(Split-Path $SourceDir -Leaf)" -ForegroundColor Green
+
+    return $changed
 }
 
 $fontSource = Join-Path $RepoRoot "color.schemes-fonts\FiraCode"
 
 Write-Host "`n== Fonts ==" -ForegroundColor Cyan
-Install-FontsFromFolder -SourceDir $fontSource
+$fontsChanged = Install-FontsFromFolder -SourceDir $fontSource
 
 Write-Host "`n== Windows Terminal settings ==" -ForegroundColor Cyan
 
@@ -458,6 +464,49 @@ else {
     }
     else {
         Write-Warning "⚠️ Windows Terminal LocalState not found: $localState (start Windows Terminal once, then re-run)."
+    }
+}
+
+# Windows Terminal caches its font list when it starts, so a terminal that was
+# already running before the FiraCode fonts were installed can't see them until
+# it restarts — otherwise it throws "Unable to find the following fonts".
+$fontDir     = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
+$newestFont  = Get-ChildItem -LiteralPath $fontDir -Filter "*.ttf" -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+$wtProcesses = Get-Process WindowsTerminal -ErrorAction SilentlyContinue
+
+$staleWtCache = [bool]($wtProcesses | Where-Object {
+    $newestFont -and $_.StartTime -lt $newestFont.LastWriteTime
+})
+
+if (($fontsChanged -or $staleWtCache) -and $wtProcesses) {
+
+    $wtExe = Get-Command wt -ErrorAction SilentlyContinue
+
+    $restartAnswer = Read-Host "`nWindows Terminal was running before the FiraCode fonts were installed, so it can't see them until it restarts (this will close your current tabs). Restart Windows Terminal now? (y/N)"
+
+    if ($restartAnswer -match "^(y|yes)$") {
+
+        if ($wtExe) {
+
+            $restartCmd = "Start-Sleep -Seconds 5; " +
+                "Get-Process WindowsTerminal -ErrorAction SilentlyContinue | Stop-Process -Force; " +
+                "Start-Sleep -Milliseconds 1500; " +
+                "Start-Process -FilePath `"$($wtExe.Source)`""
+
+            Start-Process pwsh `
+                -WindowStyle Hidden `
+                -ArgumentList @("-NoProfile", "-Command", $restartCmd)
+
+            Write-Host "✔ Windows Terminal will restart in a few seconds to pick up the new fonts" -ForegroundColor Green
+        }
+        else {
+            Write-Warning "⚠️ Couldn't find 'wt' to relaunch Windows Terminal; close and reopen it manually."
+        }
+    }
+    else {
+        Write-Host "ℹ️  Close all Windows Terminal windows once to clear the 'Unable to find the following fonts' error." -ForegroundColor Yellow
     }
 }
 
@@ -703,22 +752,22 @@ if (Test-Path -LiteralPath "$everythingDir\es.exe") {
 }
 
 # =========================================================
-# 🧠  opencode memory system (git clone + configure)
+# 🌸  Freyja AI companion (git clone + configure)
 # =========================================================
 
-function Install-OpencodeMemorySystem {
-    $repoUrl = "https://github.com/ADHD-exe/opencode.git"
-    $target  = Join-Path $HOME "Documents\opencode"
+function Install-Freyja {
+    $repoUrl = "git@github.com:ADHD-exe/freyja.git"
+    $target  = Join-Path $HOME "Documents\freyja"
 
-    Write-Host "`n== opencode memory system ==" -ForegroundColor Cyan
+    Write-Host "`n== Freyja ==" -ForegroundColor Cyan
 
     if (-not (Test-CommandExists "git")) {
-        Write-Warning "⚠️ git not found; skipping opencode memory system setup."
+        Write-Warning "⚠️ git not found; skipping Freyja setup."
         return
     }
 
     if (Test-Path -LiteralPath (Join-Path $target ".git")) {
-        Write-Host "ℹ️  opencode repo already present — pulling latest." -ForegroundColor Yellow
+        Write-Host "ℹ️  Freyja repo already present — pulling latest." -ForegroundColor Yellow
         git -C $target pull --ff-only | Out-Null
 
         if ($LASTEXITCODE -ne 0) {
@@ -730,30 +779,30 @@ function Install-OpencodeMemorySystem {
         return
     }
     else {
-        Write-Host "ℹ️  Cloning opencode repo → $target" -ForegroundColor Yellow
+        Write-Host "ℹ️  Cloning Freyja repo → $target" -ForegroundColor Yellow
         git clone $repoUrl $target | Out-Null
 
         if ($LASTEXITCODE -ne 0) {
-            Write-Warning "⚠️ Failed to clone opencode repo."
+            Write-Warning "⚠️ Failed to clone Freyja repo."
             return
         }
     }
 
-    $archive = Join-Path $target "scripts\archive.ps1"
+    $archive = Join-Path $target "memories\scripts\archive.ps1"
 
     if (Test-Path -LiteralPath $archive) {
         & $archive
-        Write-Host "✔ opencode memory system configured (memories\ dirs + INDEX.md)" -ForegroundColor Green
+        Write-Host "✔ Freyja installed & memory system configured (memories\ dirs + INDEX.md)" -ForegroundColor Green
     }
     else {
-        Write-Warning "⚠️ scripts\archive.ps1 not found; opencode memory system not configured."
+        Write-Warning "⚠️ memories\scripts\archive.ps1 not found; Freyja memory system not configured."
     }
 }
 
-$opencodeAnswer = Read-Host "`nInstall & configure the opencode memory system from https://github.com/ADHD-exe/opencode.git? (y/N)"
+$freyjaAnswer = Read-Host "`nDownload, install & configure Freyja from https://github.com/ADHD-exe/freyja.git? (y/N)"
 
-if ($opencodeAnswer -match "^(y|yes)$") {
-    Install-OpencodeMemorySystem
+if ($freyjaAnswer -match "^(y|yes)$") {
+    Install-Freyja
 }
 
 Write-Host "`n✔ Bootstrap complete" -ForegroundColor Green
