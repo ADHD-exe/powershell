@@ -41,7 +41,7 @@ Run this block from any PowerShell window (Windows PowerShell 5.1 or PowerShell 
 
 ```powershell
 # Requires git (install it first with: winget install -e --id Git.Git)
-$tmp  = Join-Path $env:TEMP "rabbit-profile"
+$tmp  = Join-Path $env:TEMP "powershell-setup"
 $dst  = Join-Path $HOME "Documents\PowerShell"
 git clone --depth 1 https://github.com/ADHD-exe/powershell.git $tmp
 New-Item -ItemType Directory -Path $dst -Force | Out-Null
