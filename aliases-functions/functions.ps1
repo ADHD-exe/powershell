@@ -170,6 +170,20 @@ function web {
     if ($Url) { Start-Process $Url }
 }
 
+function phonecam {
+    # OpenCam - use an iPhone as a wireless webcam. Installed by the bootstrap
+    # into Documents\OpenCam with its own venv; pythonw keeps the console hidden.
+    $dir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "OpenCam"
+    $exe = Join-Path $dir "venv\Scripts\pythonw.exe"
+
+    if (-not (Test-Path -LiteralPath $exe)) {
+        Write-Warning "OpenCam isn't installed. Run .\bootstrap-packages\bootstrap.ps1 to set it up."
+        return
+    }
+
+    Start-Process -FilePath $exe -ArgumentList "main.py" -WorkingDirectory $dir
+}
+
 function search {
     param([Parameter(ValueFromRemainingArguments)][string[]]$Query)
     $q = [uri]::EscapeDataString(($Query -join ' '))

@@ -155,6 +155,17 @@ $Packages = @(
         ChocoId   = "git-lfs"
     },
     @{
+        # OpenCam is a Python app - see Install-OpenCam below.
+        Name      = "python 3"
+        Command   = "python"
+        WingetId  = "Python.Python.3.14"
+        ChocoId   = "python"
+        TestPaths = @(
+            "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Launcher\py.exe"
+        )
+    },
+    @{
         Name      = "node.js lts"
         Command   = "node"
         WingetId  = "OpenJS.NodeJS.LTS"
@@ -467,6 +478,133 @@ function Install-GitModule {
 Install-GitModule `
     -Name "YouShouldUse" `
     -RepoUrl "https://github.com/ADHD-exe/pwsh-you-should-use.git"
+
+# =========================================================
+# 📷  OpenCam (use an iPhone as a webcam)
+# =========================================================
+
+function Install-OpenCam {
+    <#
+        Clones OpenCam, builds it a private virtualenv and installs its
+        requirements there. The venv keeps its 30-odd packages (aiortc,
+        opencv, av, ...) out of the system Python. Launched by the
+        `phonecam` function, Win+Alt+C, and a Start menu shortcut.
+    #>
+
+    $repoUrl = "https://github.com/ADHD-exe/OpenCam.git"
+    $target  = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "OpenCam"
+
+    Write-Host "`n== OpenCam ==" -ForegroundColor Cyan
+
+    if (-not (Test-CommandExists "git")) {
+        Write-Warning "⚠️ git not found; skipping OpenCam."
+        return
+    }
+
+    $python = @(
+        (Get-Command python -ErrorAction SilentlyContinue).Source,
+        "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe"
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+
+    if (-not $python) {
+        Write-Warning "⚠️ Python not found; skipping OpenCam."
+        return
+    }
+
+    # --- source ---
+    if (Test-Path -LiteralPath (Join-Path $target ".git")) {
+
+        git -C $target pull --ff-only 2>&1 | Out-Null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✔ OpenCam up to date" -ForegroundColor Green
+        }
+        else {
+            Write-Warning "⚠️ git pull failed; keeping the existing copy."
+        }
+    }
+    elseif (Test-Path -LiteralPath $target) {
+        Write-Warning "⚠️ $target exists but isn't a git clone; leaving it alone."
+        return
+    }
+    else {
+
+        git clone --depth 1 $repoUrl $target 2>&1 | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "⚠️ Couldn't clone OpenCam from $repoUrl"
+            return
+        }
+
+        Write-Host "✔ Cloned OpenCam -> $target" -ForegroundColor Green
+    }
+
+    # --- dependencies, in their own venv ---
+    $venv    = Join-Path $target "venv"
+    $venvPy  = Join-Path $venv "Scripts\python.exe"
+    $pythonw = Join-Path $venv "Scripts\pythonw.exe"
+
+    if (-not (Test-Path -LiteralPath $venvPy)) {
+
+        Write-Host "ℹ️  Creating virtualenv ..." -ForegroundColor Yellow
+        & $python -m venv $venv 2>&1 | Out-Null
+
+        if (-not (Test-Path -LiteralPath $venvPy)) {
+            Write-Warning "⚠️ Couldn't create the OpenCam virtualenv."
+            return
+        }
+    }
+
+    $requirements = Join-Path $target "requirements.txt"
+
+    if (Test-Path -LiteralPath $requirements) {
+
+        Write-Host "ℹ️  Installing OpenCam dependencies (this takes a minute) ..." -ForegroundColor Yellow
+
+        & $venvPy -m pip install --upgrade pip --quiet 2>&1 | Out-Null
+        & $venvPy -m pip install -r $requirements --quiet 2>&1 | Out-Null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✔ OpenCam dependencies installed" -ForegroundColor Green
+        }
+        else {
+            Write-Warning "⚠️ pip install failed; run it by hand: $venvPy -m pip install -r `"$requirements`""
+        }
+    }
+    else {
+        Write-Warning "⚠️ requirements.txt missing from the OpenCam clone."
+    }
+
+    # --- Start menu shortcut ---
+    if (Test-Path -LiteralPath $pythonw) {
+
+        $startMenu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+        $shortcut  = Join-Path $startMenu "OpenCam.lnk"
+
+        $shell = New-Object -ComObject WScript.Shell
+        $sc    = $shell.CreateShortcut($shortcut)
+
+        # pythonw, not python: OpenCam is a GUI app and shouldn't show a console.
+        $sc.TargetPath       = $pythonw
+        $sc.Arguments        = "main.py"
+        $sc.WorkingDirectory = $target
+        $sc.Description      = "OpenCam - use your phone as a webcam"
+
+        $icon = @("web\static\icon.ico", "web\static\Logo.ico") |
+            ForEach-Object { Join-Path $target $_ } |
+            Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+
+        if ($icon) { $sc.IconLocation = $icon }
+
+        $sc.Save()
+
+        Write-Host "✔ Start menu shortcut -> $shortcut" -ForegroundColor Green
+    }
+
+    Write-Host "ℹ️  Launch with 'phonecam', Win+Alt+C, or the Start menu. First run installs the virtual-camera driver (asks for admin)." -ForegroundColor Yellow
+}
+
+Install-OpenCam
 
 # =========================================================
 # 🖥️  Fonts & Windows Terminal

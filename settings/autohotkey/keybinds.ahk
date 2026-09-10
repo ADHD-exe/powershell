@@ -35,6 +35,7 @@
 ; =========================================================
 #!n::Run "explorer.exe ms-availablenetworks:"   ; Network pane (available networks flyout)
 #!v::OpenClassicVolume()                        ; Classic volume mixer (SndVol)
+#!c::RunOpenCam()                               ; OpenCam (phone as webcam)
 #y::Run "mblctr.exe"                            ; Windows Mobility Center
 
 ; =========================================================
@@ -43,6 +44,19 @@
 
 ; Windows 11 ships SndVol.exe in System32, but some builds only keep a working
 ; copy in SysWOW64 - try both.
+
+; Launches OpenCam from the venv the bootstrap creates. pythonw keeps the
+; console window hidden - OpenCam is a GUI app.
+RunOpenCam() {
+    dir := A_MyDocuments "\OpenCam"
+    exe := dir "\venv\Scripts\pythonw.exe"
+    if FileExist(exe) {
+        Run '"' exe '"' " main.py", dir
+        return
+    }
+    MsgBox "OpenCam is not installed yet. Run bootstrap.ps1 to set it up.", "OpenCam", 0x30
+}
+
 OpenClassicVolume() {
     for path in [A_WinDir "\System32\SndVol.exe", A_WinDir "\SysWOW64\SndVol.exe"] {
         if FileExist(path) {

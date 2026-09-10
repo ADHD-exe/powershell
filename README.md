@@ -103,6 +103,7 @@ Every step is idempotent and safe to re-run. It installs anything missing:
 - **CLI tools** (via `winget`, falling back to Chocolatey): `git`, `git-lfs`, `node`, `zoxide`, `oh-my-posh`, `atuin`, `fzf`, `fd`, `bat`, `eza`, `yazi`, `neovim`, `tailscale`, `opencode`
 - **Desktop apps**: PowerShell 7, Windows Terminal, Notepad++, Firefox Developer Edition, paint.NET, Spotify, Everything, AutoHotkey, Winaero Tweaker, O&O ShutUp10, and Outlook for Windows (via the Microsoft Store)
 - **PowerShell modules** from the PS Gallery: `Terminal-Icons`, `PSWriteColor`, `BurntToast`, `syntax-highlighting`, `PSEverything` (PSReadLine ships with PowerShell 7)
+- **OpenCam**: clones [OpenCam](https://github.com/ADHD-exe/OpenCam) into `Documents\OpenCam`, builds it a private virtualenv, installs its Python requirements there, and adds a Start menu shortcut. Launch with `phonecam`, `Win+Alt+C`, or the shortcut
 - **Modules from git**: `YouShouldUse` (not on the Gallery) is cloned into `Modules/YouShouldUse` and unblocked. The folder name has to match the `.psd1` basename or PowerShell can't discover it by name
 - **Nerd Fonts**: installs everything in `settings\fonts` per-user (no admin needed) and registers it in the current-user font registry
 - **Windows Terminal settings**: deploys `settings\settings.json` into the Terminal's `LocalState` folder, backing up any existing file
@@ -172,7 +173,7 @@ From `settings\autohotkey\keybinds.ahk`, deployed to `Documents\AutoHotkey\` and
 | `Win+d` | Discord | `Win+Alt+n` | Available-networks flyout |
 | `Win+f` | File Explorer | `Win+Alt+v` | Classic volume mixer |
 | `Win+m` | Microsoft Store | `Win+y` | Windows Mobility Center |
-| `Win+e` | eM Client | | |
+| `Win+e` | eM Client | `Win+Alt+c` | **OpenCam** (phone as webcam) |
 
 App paths use AutoHotkey's own `A_ProgramFiles` / `A_AppData` variables, so the script is portable across usernames.
 
@@ -208,6 +209,7 @@ Fast one-liners from `aliases-functions/functions.ps1`: `gpull`, `gcom <msg>` (a
 | `Copy-Pwd` / `Copy-Path` / `copyfile` | Copy the current directory / a file's path / a file's contents |
 | `head` / `tail` / `touch` / `which` | File and command basics |
 | `unzip <file> [dest]` | `Expand-Archive` wrapper; extracts to the current folder by default, `-Force` to overwrite |
+| `phonecam` | Launch OpenCam - use your phone as a wireless webcam |
 | `web <url>` / `search` / `bing` / `ddg` / `so` / `gh-search` | Open a URL or search the web |
 | `pgrep` / `pkill` / `k9` | Manage processes by name |
 | `uptime` / `sysinfo` / `Port <n>` | System info and open ports |
@@ -238,6 +240,7 @@ Long-running or failed commands fire a toast and a terminal bell automatically �
 - PowerShell 7+ (the profile uses PS7-only syntax such as `??=` and `?.`)
 - `winget` (App Installer) — `install.ps1` requires it for the prerequisites; the bootstrap falls back to Chocolatey for individual packages
 - Node.js — only for the `openclaw` and `claude-code` npm globals
+- Python 3.9+ — only for OpenCam, which gets its own virtualenv so its dependencies stay out of your system Python
 
 ## Notes
 
