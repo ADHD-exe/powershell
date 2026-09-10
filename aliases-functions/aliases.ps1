@@ -13,7 +13,14 @@ Set-Alias v nvim
 
 Set-Alias y yy
 
-Set-Alias ls ll
+# ls / ll / la / lt are eza functions in functions.ps1. PowerShell ships `ls`
+# as a built-in alias for Get-ChildItem, and aliases outrank functions, so the
+# alias has to go or the function can never run.
+Remove-Alias ls -Force -ErrorAction SilentlyContinue
+
+# Same reason: `man` ships as an alias for `help`, which would shadow the man
+# function in functions.ps1 that defaults to Get-Help -Full.
+Remove-Alias man -Force -ErrorAction SilentlyContinue
 
 Set-Alias reload Reload-Profile
 Set-Alias rl Reload-Profile
@@ -25,10 +32,6 @@ Set-Alias reboot Restart-System
 
 Set-Alias grep Select-String
 Set-Alias ai opencode
-
-if (Get-Command eza -ErrorAction SilentlyContinue) {
-    Set-Alias ls eza
-}
 
 if (Get-Command bat -ErrorAction SilentlyContinue) {
     Set-Alias cat bat

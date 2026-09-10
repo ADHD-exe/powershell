@@ -1,0 +1,12 @@
+# Identity note: this repo is public, so no email address is stored here.
+# deploy-configs.ps1 prompts for user.email on a machine that doesn't have
+# one set, and never overwrites an existing identity.
+[user]
+	name = ADHD.exe
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+[filter "lfs"]
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f

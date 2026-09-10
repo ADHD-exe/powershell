@@ -55,14 +55,21 @@ function notify {
     Send-TaskNotification -Title "Notification" -Message $Message
 }
 
-if (Test-Path Function:\prompt) {
-    $global:__PreNotifyPrompt = ${function:prompt}
+# Capture the prompt this wraps. `reload` re-sources the profile, at which
+# point `prompt` is already the wrapper below - capturing that would make the
+# wrapper call itself and blow the call stack, so recognise it by its marker
+# and keep the prompt it originally wrapped instead.
+$script:currentPrompt = if (Test-Path Function:\prompt) { ${function:prompt} } else { $null }
+
+if ($script:currentPrompt -and $script:currentPrompt.ToString() -notmatch '__RabbitNotifyWrapper') {
+    $global:__PreNotifyPrompt = $script:currentPrompt
 }
-else {
+elseif (-not $global:__PreNotifyPrompt) {
     $global:__PreNotifyPrompt = { "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) " }
 }
 
 function global:prompt {
+    # __RabbitNotifyWrapper - do not remove, see the capture logic above.
 
     $commandSucceeded = $?
     $hist = Get-History -Count 1

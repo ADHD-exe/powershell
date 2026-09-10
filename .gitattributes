@@ -1,0 +1,22 @@
+# Line endings
+#
+# Normalize to LF in the repo, check out CRLF on Windows. Without this, git
+# guesses per file and warns "LF will be replaced by CRLF" on every add.
+* text=auto eol=crlf
+
+# Files that must keep LF regardless of platform
+*.sh   text eol=lf
+*.toml text eol=lf
+
+# Binary assets - never touch, never diff
+*.ttf  binary
+*.otf  binary
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.dll  binary
+*.exe  binary
+
+# Large generated config - collapse in diffs
+settings/notepad++/langs.xml   -diff
+settings/notepad++/stylers.xml -diff

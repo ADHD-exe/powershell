@@ -25,13 +25,14 @@ function Import-ProfileModules {
         "Terminal-Icons",
         "PSReadLine",
         "PSWriteColor",
-        "alias-tips"
+        "syntax-highlighting",
+        "PSEverything"
     )
 
     $scriptDirs = @(
-        "$PSScriptRoot\aliases-keybinds",
+        "$PSScriptRoot\aliases-functions",
         "$PSScriptRoot\completions",
-        "$PSScriptRoot\scripts-functions",
+        "$PSScriptRoot\keybinds-scripts",
         "$PSScriptRoot\Scripts",
         "$PSScriptRoot\bootstrap-packages"
     )
@@ -82,11 +83,17 @@ if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     })
 }
 
+$global:RabbitAtuinEnabled = $false
+
 if (Get-Command atuin -ErrorAction SilentlyContinue) {
 
     Invoke-Expression (& {
         atuin init powershell | Out-String
     })
+
+    # atuin's init binds UpArrow and Ctrl+r to its own search. The PSReadLine
+    # key handlers further down would clobber those, so they check this flag.
+    $global:RabbitAtuinEnabled = [bool](Get-Module Atuin)
 }
 
 if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
@@ -124,14 +131,22 @@ Set-PSReadLineOption `
         Error     = '#FF6347'
     }
 
-Set-PSReadLineKeyHandler `
-    -Key 'UpArrow' `
-    -Function HistorySearchBackward
+# UpArrow belongs to atuin when it's running - it opens atuin's search with
+# the current buffer as the query. Only fall back to PSReadLine's own history
+# search when atuin isn't installed.
+if (-not $global:RabbitAtuinEnabled) {
+
+    Set-PSReadLineKeyHandler `
+        -Key 'UpArrow' `
+        -Function HistorySearchBackward
+}
 
 Set-PSReadLineKeyHandler `
     -Key 'DownArrow' `
     -Function HistorySearchForward
 
+# Always available as the PSReadLine escape hatch, whether or not atuin owns
+# the plain arrow keys.
 Set-PSReadLineKeyHandler `
     -Chord 'Ctrl+UpArrow' `
     -Function HistorySearchBackward
@@ -227,9 +242,9 @@ Set-PSReadLineKeyHandler -Key Ctrl+Spacebar -ScriptBlock {
 }
 
 $ProfileScriptDirs = @(
-    "$PSScriptRoot\aliases-keybinds",
+    "$PSScriptRoot\aliases-functions",
     "$PSScriptRoot\completions",
-    "$PSScriptRoot\scripts-functions"
+    "$PSScriptRoot\keybinds-scripts"
 )
 
 foreach ($dir in $ProfileScriptDirs) {
@@ -240,6 +255,19 @@ foreach ($dir in $ProfileScriptDirs) {
             ForEach-Object {
                 . $_.FullName
             }
+    }
+}
+
+# YouShouldUse hooks the prompt to nag about unused aliases, so it must load
+# after oh-my-posh sets the prompt AND after notify.ps1 wraps it - which is why
+# it's imported here rather than in the $modules list at the top.
+if (Get-Module -ListAvailable -Name YouShouldUse) {
+
+    Import-Module YouShouldUse -ErrorAction SilentlyContinue
+
+    # Re-attach in case anything above replaced the prompt after it hooked in.
+    if (Get-Command Update-YouShouldUseHook -ErrorAction SilentlyContinue) {
+        Update-YouShouldUseHook
     }
 }
 

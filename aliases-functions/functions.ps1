@@ -1,16 +1,4 @@
 # =========================================================
-# 🧠 CORE UTILITIES
-# =========================================================
-
-function Require-Command {
-    param([string]$Name,[string]$InstallHint="")
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        $hint = if ($InstallHint) { " Install: $InstallHint" } else { "" }
-        Write-Warning "[$Name] not found.$hint"
-    }
-}
-
-# =========================================================
 # 🧭 NAVIGATION
 # =========================================================
 
@@ -29,8 +17,12 @@ function mkcd {
     Set-Location $Dir
 }
 
-function ll { eza --icons --group-directories-first --git -la }
-function lt { eza --tree --level=2 --icons }
+# All four are eza in different view modes. They're functions rather than
+# aliases so they can take a path and extra flags: `ls src`, `la -s size`.
+function ls { eza --icons --group-directories-first @args }
+function ll { eza --icons --group-directories-first --long --git --header @args }
+function la { eza --icons --group-directories-first --long --git --header --all @args }
+function lt { eza --icons --group-directories-first --tree --level=2 @args }
 
 # =========================================================
 # 📂 FILE / SYSTEM
@@ -44,6 +36,24 @@ function touch {
 
 function head { param([string]$Path,[int]$Lines=10) Get-Content $Path -Head $Lines }
 function tail { param([string]$Path,[int]$Lines=10) Get-Content $Path -Tail $Lines }
+
+# Takes precedence over the Info-ZIP unzip.exe that ships with Git for Windows
+# (functions beat external programs). Extracts to the current directory unless
+# a destination is given.
+function unzip {
+    param(
+        [Parameter(Mandatory, Position = 0)][string]$Path,
+        [Parameter(Position = 1)][string]$Destination = ".",
+        [switch]$Force
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Warning "Archive not found: $Path"
+        return
+    }
+
+    Expand-Archive -LiteralPath $Path -DestinationPath $Destination -Force:$Force
+}
 
 function which {
     param([string]$Name)
@@ -64,12 +74,15 @@ function k9 { param([string]$Name) pkill $Name }
 # 📋 CLIPBOARD
 # =========================================================
 
-function copy {
+# Named cbcopy/cbpaste, not copy/paste: PowerShell resolves aliases before
+# functions, and `copy` is a built-in alias for Copy-Item - a function of that
+# name can never run.
+function cbcopy {
     param([Parameter(ValueFromPipeline=$true)]$InputObject)
     process { $InputObject | Set-Clipboard }
 }
 
-function paste { Get-Clipboard }
+function cbpaste { Get-Clipboard }
 
 function Copy-Pwd { (Get-Location).Path | Set-Clipboard }
 
@@ -203,13 +216,28 @@ function Edit-Profile { nvim $PROFILE }
 
 function Reload-Profile {
     Remove-Variable RABBIT_PROFILE_LOADED -Scope Global -ErrorAction SilentlyContinue
+
+    # oh-my-posh, notify.ps1 and YouShouldUse each wrap the prompt. Reloading
+    # without unwinding that chain makes them wrap each other's wrappers, which
+    # ends in a call-depth overflow. Deleting the prompt doesn't work either:
+    # `. $PROFILE` here dot-sources into this function's scope, so oh-my-posh's
+    # re-init never reaches global and the prompt would be lost. So unwind to
+    # the original prompt that notify.ps1 saved, then let them re-wrap cleanly.
+    if (Get-Command Disable-YouShouldUse -ErrorAction SilentlyContinue) {
+        Disable-YouShouldUse -ErrorAction SilentlyContinue
+    }
+
+    if ($global:__PreNotifyPrompt) {
+        Set-Item -Path Function:global:prompt -Value $global:__PreNotifyPrompt
+    }
+
     . $PROFILE
     Write-Host "󰑐 Profile reloaded" -ForegroundColor Green
 }
 
 function fn { notepad "$PSScriptRoot\functions.ps1" }
-function al { notepad "$(Split-Path -Parent $PSScriptRoot)\aliases-keybinds\aliases.ps1" }
-function theme { notepad "$(Split-Path -Parent $PSScriptRoot)\color.schemes-fonts\oh-my-rabbit.omp.json" }
+function al { notepad "$PSScriptRoot\aliases.ps1" }
+function theme { notepad "$(Split-Path -Parent $PSScriptRoot)\settings\oh-my-rabbit.omp.json" }
 
 # =========================================================
 # 🔐 HISTORY
@@ -225,12 +253,33 @@ function forget {
     }
 }
 
-function Burn-AfterReading {
-    Write-Host "History wipe routine placeholder"
-}
-
-Set-Alias burn Burn-AfterReading
 Set-Alias help! Get-Help
+
+# `man <command>` -> Get-Help <command> -Full, so the full article is the
+# default rather than the summary. PowerShell ships `man` as an alias for
+# `help`; aliases outrank functions, so aliases.ps1 removes it first.
+function man {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)][string]$Name,
+        [switch]$Detailed,
+        [switch]$Examples,
+        [switch]$Online,
+        [switch]$ShowWindow,
+        [string]$Parameter
+    )
+
+    # Get-Help puts each view in its own parameter set, so they're forwarded
+    # one at a time rather than splatted - -Full alongside any other view
+    # switch makes Get-Help fail to resolve the set.
+    if ($Detailed)   { return Get-Help $Name -Detailed }
+    if ($Examples)   { return Get-Help $Name -Examples }
+    if ($Online)     { return Get-Help $Name -Online }
+    if ($ShowWindow) { return Get-Help $Name -ShowWindow }
+    if ($Parameter)  { return Get-Help $Name -Parameter $Parameter }
+
+    Get-Help $Name -Full
+}
 
 # =========================================================
 # COMMAND PALETTE

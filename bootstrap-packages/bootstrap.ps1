@@ -142,6 +142,33 @@ function Install-PackageFallback {
 
 $Packages = @(
     @{
+        Name      = "git"
+        Command   = "git"
+        WingetId  = "Git.Git"
+        ChocoId   = "git"
+        TestPaths = @("$env:ProgramFiles\Git\cmd\git.exe")
+    },
+    @{
+        Name      = "git-lfs"
+        Command   = "git-lfs"
+        WingetId  = "GitHub.GitLFS"
+        ChocoId   = "git-lfs"
+    },
+    @{
+        Name      = "node.js lts"
+        Command   = "node"
+        WingetId  = "OpenJS.NodeJS.LTS"
+        ChocoId   = "nodejs-lts"
+        TestPaths = @("$env:ProgramFiles\nodejs\node.exe")
+    },
+    @{
+        Name      = "tailscale"
+        Command   = "tailscale"
+        WingetId  = "tailscale.tailscale"
+        ChocoId   = "tailscale"
+        TestPaths = @("$env:ProgramFiles\Tailscale\tailscale.exe")
+    },
+    @{
         Name     = "zoxide"
         Command  = "zoxide"
         WingetId = "ajeetdsouza.zoxide"
@@ -256,13 +283,40 @@ $Packages = @(
     },
     @{
         Name      = "everything"
-        Command   = "es"
-        WingetId  = "voidtools.Everything"
+        Command   = ""
+        WingetId  = "voidtools.Everything.Lite"
         ChocoId   = "everything"
         TestPaths = @(
-            "$env:ProgramFiles\Everything\Everything.exe",
-            "$env:ProgramFiles\Everything\es.exe"
+            "$env:ProgramFiles\Everything\Everything.exe"
         )
+    },
+    @{
+        # The `es` CLI is a separate package - Everything Lite doesn't ship it,
+        # which is why `es` was missing even with Everything installed.
+        Name      = "everything cli (es)"
+        Command   = "es"
+        WingetId  = "voidtools.Everything.Cli"
+        ChocoId   = ""
+        TestPaths = @(
+            "$env:ProgramFiles\Everything\es.exe",
+            "$env:LOCALAPPDATA\Microsoft\WinGet\Links\es.exe"
+        )
+    },
+    @{
+        # Launched by keybinds.ahk (Win+E)
+        Name      = "em client"
+        Command   = ""
+        WingetId  = "eMClient.eMClient"
+        ChocoId   = ""
+        TestPaths = @("${env:ProgramFiles(x86)}\eM Client\MailClient.exe")
+    },
+    @{
+        # Discord client used by keybinds.ahk (Win+D)
+        Name      = "equibop"
+        Command   = ""
+        WingetId  = "Equicord.Equibop"
+        ChocoId   = ""
+        TestPaths = @("$env:LOCALAPPDATA\Equibop\equibop.exe")
     },
     @{
         Name       = "outlook for windows"
@@ -327,7 +381,9 @@ $Modules = @(
     "Terminal-Icons",
     "PSReadLine",
     "PSWriteColor",
-    "alias-tips"
+    "BurntToast",
+    "syntax-highlighting",
+    "PSEverything"
 )
 
 foreach ($name in $Modules) {
@@ -348,6 +404,69 @@ foreach ($name in $Modules) {
         }
     }
 }
+
+# =========================================================
+# 🧩  Modules from git (not on the PS Gallery)
+# =========================================================
+
+function Install-GitModule {
+    <#
+        Clones a module straight into the profile's Modules folder. The folder
+        name must match the .psd1 basename or PowerShell can't discover the
+        module by name, so it's passed explicitly rather than inferred from the
+        repo name.
+    #>
+    param(
+        [string]$Name,
+        [string]$RepoUrl
+    )
+
+    $modulesDir = Join-Path (Split-Path -Parent $PSScriptRoot) "Modules"
+    $target     = Join-Path $modulesDir $Name
+
+    if (-not (Test-CommandExists "git")) {
+        Write-Warning "⚠️ git not found; skipping module '$Name'."
+        return
+    }
+
+    New-Item -ItemType Directory -Path $modulesDir -Force | Out-Null
+
+    if (Test-Path -LiteralPath (Join-Path $target ".git")) {
+
+        git -C $target pull --ff-only 2>&1 | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "⚠️ git pull failed for '$Name'; keeping the existing copy."
+        }
+        else {
+            Write-Host "✔ '$Name' up to date" -ForegroundColor Green
+        }
+    }
+    elseif (Test-Path -LiteralPath $target) {
+        Write-Warning "⚠️ $target exists but isn't a git clone; leaving it alone."
+        return
+    }
+    else {
+
+        git clone --depth 1 $RepoUrl $target 2>&1 | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "⚠️ Couldn't clone '$Name' from $RepoUrl"
+            return
+        }
+
+        Write-Host "✔ Cloned '$Name' -> $target" -ForegroundColor Green
+    }
+
+    # Cloned files carry the internet zone marker, and RemoteSigned refuses to
+    # load unsigned scripts that have it.
+    Get-ChildItem -LiteralPath $target -Recurse -File -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+}
+
+Install-GitModule `
+    -Name "YouShouldUse" `
+    -RepoUrl "https://github.com/ADHD-exe/pwsh-you-should-use.git"
 
 # =========================================================
 # 🖥️  Fonts & Windows Terminal
@@ -411,14 +530,14 @@ function Install-FontsFromFolder {
     return $changed
 }
 
-$fontSource = Join-Path $RepoRoot "color.schemes-fonts\FiraCode"
+$fontSource = Join-Path $RepoRoot "settings\fonts"
 
 Write-Host "`n== Fonts ==" -ForegroundColor Cyan
 $fontsChanged = Install-FontsFromFolder -SourceDir $fontSource
 
 Write-Host "`n== Windows Terminal settings ==" -ForegroundColor Cyan
 
-$settingsTemplate = Join-Path $RepoRoot "color.schemes-fonts\settings.json"
+$settingsTemplate = Join-Path $RepoRoot "settings\settings.json"
 
 if (-not (Test-Path -LiteralPath $settingsTemplate)) {
     Write-Warning "⚠️ settings.json template missing (gitignored on an old clone?); skipping terminal config."
@@ -477,7 +596,7 @@ else {
 }
 
 # Windows Terminal caches its font list when it starts, so a terminal that was
-# already running before the FiraCode fonts were installed can't see them until
+# already running before the bundled Nerd Fonts were installed can't see them until
 # it restarts — otherwise it throws "Unable to find the following fonts".
 $fontDir     = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
 $newestFont  = Get-ChildItem -LiteralPath $fontDir -Filter "*.ttf" -File -ErrorAction SilentlyContinue |
@@ -493,7 +612,7 @@ if (($fontsChanged -or $staleWtCache) -and $wtProcesses) {
 
     $wtExe = Get-Command wt -ErrorAction SilentlyContinue
 
-    $restartAnswer = Read-Host "`nWindows Terminal was running before the FiraCode fonts were installed, so it can't see them until it restarts (this will close your current tabs). Restart Windows Terminal now? (y/N)"
+    $restartAnswer = Read-Host "`nWindows Terminal was running before the bundled Nerd Fonts were installed, so it can't see them until it restarts (this will close your current tabs). Restart Windows Terminal now? (y/N)"
 
     if ($restartAnswer -match "^(y|yes)$") {
 
@@ -520,244 +639,18 @@ if (($fontsChanged -or $staleWtCache) -and $wtProcesses) {
 }
 
 # =========================================================
-# 🛠️  Registry tweaks (optional — standalone script)
+# 🎛️  App configs & customizations
 # =========================================================
 
-# Kept for the AutoHotkey section below (DisabledHotkeys check).
-function Get-RegValue {
-    param(
-        [string]$Path,
-        [string]$Name
-    )
+# Everything under settings\ that isn't fonts or the terminal template:
+# atuin, git, opencode, Notepad++, Everything, and the AutoHotkey scripts.
+$deployConfigs = Join-Path $PSScriptRoot "deploy-configs.ps1"
 
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return $null
-    }
-
-    $key = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
-
-    if (-not $key) {
-        return $null
-    }
-
-    return $key.GetValue($Name)
-}
-
-$tweaksScript = Join-Path $PSScriptRoot "registry-tweaks.ps1"
-
-if (-not (Test-Path -LiteralPath $tweaksScript)) {
-    Write-Warning "⚠️ registry-tweaks.ps1 not found in bootstrap-packages; skipping registry tweaks."
+if (Test-Path -LiteralPath $deployConfigs) {
+    & $deployConfigs
 }
 else {
-
-    $tweaksAnswer = Read-Host "`nApply registry tweaks (Winaero settings — ads, context menus, icon cache)? (y/N)"
-
-    if ($tweaksAnswer -match "^(y|yes)$") {
-        & $tweaksScript
-    }
-    else {
-        Write-Host "ℹ️  Skipped registry tweaks — run .\bootstrap-packages\registry-tweaks.ps1 anytime to apply them." -ForegroundColor Yellow
-    }
-}
-
-# =========================================================
-# ⌨️  AutoHotkey keybinds (Win+... launchers & clipboard)
-# =========================================================
-
-function Resolve-PathOrEmpty {
-    param([string[]]$Paths)
-
-    foreach ($p in $Paths) {
-        if ($p -and (Test-Path -LiteralPath $p)) {
-            return $p
-        }
-    }
-
-    return ""
-}
-
-function Get-CommandSource {
-    param([string]$Name)
-
-    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
-
-    if ($cmd) {
-        return $cmd.Source
-    }
-
-    return ""
-}
-
-function New-LauncherLine {
-    param(
-        [string]$Hotkey,
-        [string]$Target,
-        [string]$Comment
-    )
-
-    if ($Target) {
-        return "$Hotkey::Run `"$Target`"   ; $Comment"
-    }
-
-    return "; $Hotkey : SKIPPED ($Comment not found)"
-}
-
-$pwsh   = Get-CommandSource "pwsh"
-$wt     = Get-CommandSource "wt"
-$firefox   = Resolve-PathOrEmpty @("$env:ProgramFiles\Firefox\firefox.exe")
-$notepad   = Resolve-PathOrEmpty @("$env:ProgramFiles\Notepad++\notepad++.exe", "${env:ProgramFiles(x86)}\Notepad++\notepad++.exe")
-$paint     = Resolve-PathOrEmpty @("$env:ProgramFiles\paint.net\paintdotnet.exe")
-$spotify   = Resolve-PathOrEmpty @("$env:APPDATA\Spotify\Spotify.exe")
-$everything = Resolve-PathOrEmpty @("$env:ProgramFiles\Everything\Everything.exe")
-$search    = Resolve-PathOrEmpty @("$env:ProgramData\PhoenixOS\Search\Search.exe")
-
-$AhkLines = @(
-    "#Requires AutoHotkey v2.0",
-    "#UseHook On",
-    "",
-    "; ===== App launchers (generated by bootstrap.ps1) ====="
-)
-
-$AhkLines += New-LauncherLine "#Enter" $pwsh      "PowerShell 7"
-$AhkLines += New-LauncherLine "#b"     $firefox   "Firefox Developer Edition"
-$AhkLines += New-LauncherLine "#f"     "explorer.exe" "File Explorer"
-$AhkLines += New-LauncherLine "#n"     $notepad   "Notepad++"
-$AhkLines += New-LauncherLine "#p"     $paint     "paint.NET"
-$AhkLines += New-LauncherLine "#t"     $wt        "Windows Terminal"
-$AhkLines += New-LauncherLine "#m"     "ms-outlook:" "Outlook for Windows"
-$AhkLines += New-LauncherLine "#s"     $spotify   "Spotify"
-$AhkLines += New-LauncherLine "#!s"    "ms-settings:" "System Settings"
-$AhkLines += New-LauncherLine "#/"     $search    "PhoenixOS Search (requires Everything)"
-
-$AhkLines += ""
-$AhkLines += "; ===== Clipboard / edit ====="
-$AhkLines += "#z::SendInput `"^z`"   ; Undo"
-$AhkLines += "#x::SendInput `"^x`"   ; Cut"
-$AhkLines += "#c::SendInput `"^c`"   ; Copy"
-$AhkLines += "#v::SendInput `"^v`"   ; Paste"
-$AhkLines += "#a::SendInput `"^y`"   ; Redo"
-$AhkLines += ""
-$AhkLines += "; ===== Close active window ====="
-$AhkLines += "#q::WinClose `"A`""
-
-$AhkScriptDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "AutoHotkey"
-$AhkScript    = Join-Path $AhkScriptDir "keybinds.ahk"
-
-New-Item -ItemType Directory -Path $AhkScriptDir -Force | Out-Null
-
-$ahkContent = ($AhkLines -join "`r`n") + "`r`n"
-
-$existingAhk = if (Test-Path -LiteralPath $AhkScript) {
-    Get-Content -LiteralPath $AhkScript -Raw
-}
-else {
-    ""
-}
-
-if ($existingAhk -eq $ahkContent) {
-    Write-Host "✔ keybinds.ahk already up to date" -ForegroundColor Green
-}
-else {
-    [System.IO.File]::WriteAllText(
-        $AhkScript,
-        $ahkContent,
-        (New-Object System.Text.UTF8Encoding $false)
-    )
-
-    Write-Host "✔ Wrote $AhkScript" -ForegroundColor Green
-}
-
-$ahkExe = Resolve-PathOrEmpty @(
-    "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe",
-    "$env:ProgramFiles\AutoHotkey\AutoHotkey.exe"
-)
-
-if ($ahkExe) {
-
-    $ahk2Exe = Get-ChildItem `
-        -Path (Split-Path $ahkExe -Parent) `
-        -Recurse -Filter "Ahk2Exe.exe" `
-        -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-
-    if ($ahk2Exe) {
-
-        $checkOut = Join-Path $env:TEMP "keybinds.syntaxcheck.exe"
-
-        & $ahk2Exe.FullName /in $AhkScript /out $checkOut /silent | Out-Null
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✔ keybinds.ahk syntax OK (compiled with Ahk2Exe)" -ForegroundColor Green
-        }
-        else {
-            Write-Warning "⚠️ keybinds.ahk syntax check FAILED (Ahk2Exe exit $LASTEXITCODE)"
-        }
-
-        Remove-Item -LiteralPath $checkOut -Force -ErrorAction SilentlyContinue
-    }
-    else {
-        Write-Host "ℹ️  Ahk2Exe not found; AutoHotkey validates syntax when the script starts at login." -ForegroundColor Yellow
-    }
-
-    $startupDir = [Environment]::GetFolderPath("Startup")
-    $shortcut   = Join-Path $startupDir "keybinds.ahk.lnk"
-
-    if (-not (Test-Path -LiteralPath $shortcut)) {
-
-        $shell = New-Object -ComObject WScript.Shell
-        $sc    = $shell.CreateShortcut($shortcut)
-        $sc.TargetPath       = $ahkExe
-        $sc.Arguments        = "`"$AhkScript`""
-        $sc.WorkingDirectory = $AhkScriptDir
-        $sc.Save()
-
-        Write-Host "✔ Autostart shortcut created: $shortcut" -ForegroundColor Green
-    }
-    else {
-        Write-Host "✔ Autostart shortcut already exists: $shortcut" -ForegroundColor Green
-    }
-}
-else {
-    Write-Warning "⚠️ AutoHotkey not found; skipped keybinds.ahk validation and autostart."
-}
-
-$disabledKey   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-$disabledValue = "BCFMNPSTVXZQA"
-
-$currentDisabled = Get-RegValue -Path $disabledKey -Name "DisabledHotkeys"
-
-if ($currentDisabled -eq $disabledValue) {
-    Write-Host "✔ DisabledHotkeys already set to '$disabledValue'" -ForegroundColor Green
-}
-else {
-    Set-ItemProperty `
-        -Path $disabledKey `
-        -Name "DisabledHotkeys" `
-        -Value $disabledValue `
-        -Type String `
-        -ErrorAction SilentlyContinue
-
-    Write-Host "✔ DisabledHotkeys registry set to '$disabledValue'" -ForegroundColor Green
-}
-
-# Everything CLI (es.exe) on the user PATH
-$everythingDir = "$env:ProgramFiles\Everything"
-
-if (Test-Path -LiteralPath "$everythingDir\es.exe") {
-
-    $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-
-    if (($userPath -split ";") -notcontains $everythingDir) {
-
-        $newPath = if ($userPath) { "$userPath;$everythingDir" } else { $everythingDir }
-
-        [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
-
-        Write-Host "✔ Added '$everythingDir' to user PATH" -ForegroundColor Green
-    }
-    else {
-        Write-Host "✔ '$everythingDir' already on user PATH" -ForegroundColor Green
-    }
+    Write-Warning "⚠️ deploy-configs.ps1 not found; app configs not deployed."
 }
 
 # =========================================================
