@@ -40,6 +40,7 @@ PowerShell/
 │   ├── fonts/                         FiraCode, EnvyCodeR and Monoid Nerd Fonts (+ licenses/)
 │   ├── autohotkey/                    keybinds.ahk (Win+... hotkeys) and bandlab_ahk.ahk
 │   ├── atuin/config.toml              Shell history search config
+│   ├── fzf/                           fzf + PSFzf config (see its own README there)
 │   ├── git/gitconfig, ignore          Global git settings and global ignore file
 │   ├── opencode/opencode.jsonc        opencode config
 │   ├── notepad++/*.xml                Notepad++ config, shortcuts, stylers, langs, context menu
@@ -100,9 +101,9 @@ pwsh -ExecutionPolicy Bypass -File .\bootstrap-packages\bootstrap.ps1
 
 Every step is idempotent and safe to re-run. It installs anything missing:
 
-- **CLI tools** (via `winget`, falling back to Chocolatey): `git`, `git-lfs`, `node`, `zoxide`, `oh-my-posh`, `atuin`, `fzf`, `fd`, `bat`, `eza`, `yazi`, `neovim`, `tailscale`, `opencode`
+- **CLI tools** (via `winget`, falling back to Chocolatey): `git`, `git-lfs`, `node`, `zoxide`, `oh-my-posh`, `atuin`, `fzf`, `fd`, `bat`, `eza`, `ripgrep`, `yazi`, `neovim`, `tailscale`, `opencode`
 - **Desktop apps**: PowerShell 7, Windows Terminal, Notepad++, Firefox Developer Edition, paint.NET, Spotify, Everything, AutoHotkey, Winaero Tweaker, O&O ShutUp10, and Outlook for Windows (via the Microsoft Store)
-- **PowerShell modules** from the PS Gallery: `Terminal-Icons`, `PSWriteColor`, `BurntToast`, `syntax-highlighting`, `PSEverything` (PSReadLine ships with PowerShell 7)
+- **PowerShell modules** from the PS Gallery: `Terminal-Icons`, `PSWriteColor`, `BurntToast`, `syntax-highlighting`, `PSEverything`, `PSFzf` (PSReadLine ships with PowerShell 7)
 - **OpenCam**: clones [OpenCam](https://github.com/ADHD-exe/OpenCam) into `Documents\OpenCam`, builds it a private virtualenv, installs its Python requirements there, and adds a Start menu shortcut. Launch with `phonecam`, `Win+Alt+C`, or the shortcut
 - **Modules from git**: `YouShouldUse` (not on the Gallery) is cloned into `Modules/YouShouldUse` and unblocked. The folder name has to match the `.psd1` basename or PowerShell can't discover it by name
 - **Nerd Fonts**: installs everything in `settings\fonts` per-user (no admin needed) and registers it in the current-user font registry
@@ -124,6 +125,7 @@ Installing a program gives you a stock program. This step is what makes it *your
 | `settings\git\gitconfig` | global git config | Merged setting by setting. No identity is vendored (public repo) - you're prompted for `user.name`/`user.email` only if the machine has none |
 | `settings\git\ignore` | `~\.config\git\ignore` | Wired up as `core.excludesfile` |
 | `settings\opencode\opencode.jsonc` | `~\.config\opencode\` | Skipped if an `opencode.json` already exists |
+| `settings\fzf\*` | `~\.config\fzf\` | The profile dot-sources `PSFzf.config.ps1` from there at the end of its load |
 | `settings\notepad++\*.xml` | `%APPDATA%\Notepad++\` | `__USERPROFILE__` token swapped for the real path; skipped while Notepad++ is running |
 | `settings\everything\Everything.ini` | `%APPDATA%\Everything\` | Skipped while Everything is running |
 | `settings\autohotkey\*.ahk` | `~\Documents\AutoHotkey\` | `keybinds.ahk` gets a Startup shortcut and an Ahk2Exe syntax check |
@@ -154,6 +156,9 @@ Open a new `pwsh` window, or run `reload`.
 | `UpArrow` | atuin history search seeded with what you've typed (falls back to PSReadLine history when atuin isn't installed) |
 | `Ctrl+r` | atuin full history search |
 | `Ctrl+UpArrow` / `Ctrl+DownArrow` | PSReadLine prefix history search - the escape hatch from atuin |
+| `Ctrl+t` | PSFzf: insert path(s) at the cursor |
+| `Alt+c` | PSFzf: cd, fed by the zoxide database |
+| `Alt+r` / `Alt+a` | PSFzf: PSReadLine history / pull an argument from history |
 | `Ctrl+Shift+Z` / `Ctrl+Shift+X` | Undo / Kill region |
 
 Plus inline history prediction (`HistoryAndPlugin`) and a custom token color scheme.
@@ -176,6 +181,12 @@ From `settings\autohotkey\keybinds.ahk`, deployed to `Documents\AutoHotkey\` and
 | `Win+e` | eM Client | `Win+Alt+c` | **OpenCam** (phone as webcam) |
 
 App paths use AutoHotkey's own `A_ProgramFiles` / `A_AppData` variables, so the script is portable across usernames.
+
+### fzf
+
+`settings/fzf/` holds a full fzf + PSFzf setup: `ff` finds any file on C: instantly (via Everything), with `ffh`/`ffd`/`ffe`/`ffb`/`ffn`/`ffr` variants, and `fe`/`fo`/`fcp`/`cdf`/`zf`/`fkill`/`fgs` to act on the pick. Run `fzf?` for the cheat sheet or `Test-FzfSetup` to check every piece is wired up. Full docs live in [`settings/fzf/README.md`](settings/fzf/README.md).
+
+> It deliberately leaves `Ctrl+R` to atuin and feeds `Alt+C` from zoxide, so the profile loads it *after* both.
 
 ### Git
 

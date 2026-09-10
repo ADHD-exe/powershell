@@ -210,6 +210,13 @@ $Packages = @(
         ChocoId  = "fd"
     },
     @{
+        # rg backs the fzf config's ffr live content search
+        Name     = "ripgrep"
+        Command  = "rg"
+        WingetId = "BurntSushi.ripgrep.MSVC"
+        ChocoId  = "ripgrep"
+    },
+    @{
         Name     = "bat"
         Command  = "bat"
         WingetId = "sharkdp.bat"
@@ -394,7 +401,8 @@ $Modules = @(
     "PSWriteColor",
     "BurntToast",
     "syntax-highlighting",
-    "PSEverything"
+    "PSEverything",
+    "PSFzf"
 )
 
 foreach ($name in $Modules) {

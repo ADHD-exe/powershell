@@ -26,7 +26,8 @@ function Import-ProfileModules {
         "PSReadLine",
         "PSWriteColor",
         "syntax-highlighting",
-        "PSEverything"
+        "PSEverything",
+        "PSFzf"
     )
 
     $scriptDirs = @(
@@ -256,6 +257,15 @@ foreach ($dir in $ProfileScriptDirs) {
                 . $_.FullName
             }
     }
+}
+
+# fzf / PSFzf config, deployed to ~\.config\fzf by deploy-configs.ps1. It has
+# to load after atuin and zoxide: it leaves Ctrl+R to atuin and feeds Alt+C
+# from the zoxide database, so both have to be initialised first.
+$RabbitFzfConfig = Join-Path $HOME ".config\fzf\PSFzf.config.ps1"
+
+if (Test-Path -LiteralPath $RabbitFzfConfig) {
+    . $RabbitFzfConfig
 }
 
 # YouShouldUse hooks the prompt to nag about unused aliases, so it must load

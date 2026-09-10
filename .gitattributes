@@ -7,6 +7,7 @@
 # Files that must keep LF regardless of platform
 *.sh   text eol=lf
 *.toml text eol=lf
+*.conf text eol=lf
 
 # Binary assets - never touch, never diff
 *.ttf  binary

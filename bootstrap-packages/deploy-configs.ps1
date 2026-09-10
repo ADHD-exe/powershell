@@ -224,6 +224,37 @@ else {
 # Notepad++
 # =========================================================
 
+# =========================================================
+# fzf / PSFzf
+# =========================================================
+
+Write-Host "`n== fzf ==" -ForegroundColor Cyan
+
+# Same destination the upstream Install-FzfConfig.ps1 uses, so the config is
+# where its own docs say it is. The profile dot-sources PSFzf.config.ps1 from
+# here at the end of its load, which is what that installer's $PROFILE block
+# would otherwise do - doing it in the profile keeps this repo the single
+# source of truth instead of letting an installer edit a tracked file.
+$fzfSource = Join-Path $SettingsDir "fzf"
+$fzfTarget = Join-Path $HOME ".config\fzf"
+
+if (-not (Test-Path -LiteralPath $fzfSource)) {
+    Write-Bad "Missing from repo: $fzfSource"
+}
+else {
+
+    foreach ($name in "fzf.conf", "PSFzf.config.ps1", "fzf-preview.cmd", "fzf-action.cmd") {
+
+        Copy-Config `
+            -Source (Join-Path $fzfSource $name) `
+            -Target (Join-Path $fzfTarget $name)
+    }
+}
+
+# =========================================================
+# Notepad++
+# =========================================================
+
 Write-Host "`n== Notepad++ ==" -ForegroundColor Cyan
 
 $nppRunning = Get-Process notepad++ -ErrorAction SilentlyContinue
