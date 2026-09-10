@@ -75,8 +75,17 @@ function Copy-Pwd { (Get-Location).Path | Set-Clipboard }
 
 function Copy-Path {
     param([string]$File)
-    (Resolve-Path $File).Path | Set-Clipboard
+    if ($File) { (Resolve-Path $File).Path | Set-Clipboard }
+    else { (Get-Location).Path | Set-Clipboard }
 }
+
+function Copy-FileContent {
+    param([Parameter(Mandatory)][string]$File)
+    Get-Content -Raw -LiteralPath $File | Set-Clipboard
+}
+
+Set-Alias copypath Copy-Path
+Set-Alias copyfile Copy-FileContent
 
 # =========================================================
 # ⚙️ SYSTEM
@@ -106,6 +115,13 @@ function Port {
 function Restart-Explorer {
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
     Start-Process explorer
+}
+
+function Restart-System {
+    param([switch]$Force)
+    if ($Force -or (Read-Host "Reboot this computer now? (y/N)") -eq 'y') {
+        Restart-Computer -Force
+    }
 }
 
 # =========================================================
@@ -145,6 +161,30 @@ function search {
     param([Parameter(ValueFromRemainingArguments)][string[]]$Query)
     $q = [uri]::EscapeDataString(($Query -join ' '))
     web "https://www.google.com/search?q=$q"
+}
+
+function bing {
+    param([Parameter(ValueFromRemainingArguments)][string[]]$Query)
+    $q = [uri]::EscapeDataString(($Query -join ' '))
+    web "https://www.bing.com/search?q=$q"
+}
+
+function ddg {
+    param([Parameter(ValueFromRemainingArguments)][string[]]$Query)
+    $q = [uri]::EscapeDataString(($Query -join ' '))
+    web "https://duckduckgo.com/?q=$q"
+}
+
+function gh-search {
+    param([Parameter(ValueFromRemainingArguments)][string[]]$Query)
+    $q = [uri]::EscapeDataString(($Query -join ' '))
+    web "https://github.com/search?q=$q"
+}
+
+function so {
+    param([Parameter(ValueFromRemainingArguments)][string[]]$Query)
+    $q = [uri]::EscapeDataString(($Query -join ' '))
+    web "https://stackoverflow.com/search?q=$q"
 }
 
 # =========================================================

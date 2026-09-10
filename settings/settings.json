@@ -1,3 +1,4 @@
+
 {
     "$help": "https://aka.ms/terminal-documentation",
     "$schema": "https://aka.ms/terminal-profiles-schema",
@@ -40,7 +41,6 @@
             "id": "User.closeTabsAfter.0"
         }
     ],
-    "alwaysShowNotificationIcon": false,
     "compatibility.allowHeadless": true,
     "copyFormatting": "all",
     "copyOnSelect": true,
@@ -187,7 +187,6 @@
         }
     ],
     "language": "en-US",
-    "minimizeToNotificationArea": false,
     "newTabMenu": 
     [
         {
@@ -199,7 +198,7 @@
     {
         "defaults": 
         {
-            "colorScheme": "RabbitsHabits"
+            "colorScheme": "ADHD"
         },
         "list": 
         [
@@ -216,7 +215,7 @@
                 "name": "Command Prompt"
             },
             {
-                "colorScheme": "RabbitsHabits",
+                "colorScheme": "ADHD",
                 "cursorHeight": 25,
                 "cursorShape": "filledBox",
                 "experimental.rainbowSuggestions": true,
@@ -276,7 +275,7 @@
                     "window"
                 ],
                 "closeOnExit": "never",
-                "colorScheme": "RabbitsHabits",
+                "colorScheme": "ADHD",
                 "commandline": "\"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe\"",
                 "cursorHeight": 25,
                 "cursorShape": "filledBox",
@@ -346,6 +345,29 @@
     "rendering.graphicsAPI": "direct3d11",
     "schemes": 
     [
+        {
+            "background": "#05040D",
+            "black": "#272945",
+            "blue": "#0442BA",
+            "brightBlack": "#363963",
+            "brightBlue": "#2A63FF",
+            "brightCyan": "#1CEEFF",
+            "brightGreen": "#1EFFC0",
+            "brightPurple": "#A020FF",
+            "brightRed": "#FF21BC",
+            "brightWhite": "#9C96F9",
+            "brightYellow": "#FFF1B0",
+            "cursorColor": "#00FFD0",
+            "cyan": "#088CAB",
+            "foreground": "#7F86FF",
+            "green": "#02BA76",
+            "name": "ADHD",
+            "purple": "#6D21B8",
+            "red": "#C90083",
+            "selectionBackground": "#6C52FF",
+            "white": "#6062A6",
+            "yellow": "#D9B258"
+        },
         {
             "background": "#1F1D45",
             "black": "#050404",

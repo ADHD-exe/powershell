@@ -254,4 +254,4 @@ filter __tailscale_escapeStringWithSpecialChars {
     }
 }
 
-Register-ArgumentCompleter -CommandName 'tailscale' -ScriptBlock ${__tailscaleCompleterBlock}
+Register-ArgumentCompleter -Native -CommandName 'tailscale' -ScriptBlock ${__tailscaleCompleterBlock}

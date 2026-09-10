@@ -28,11 +28,19 @@ function Import-ProfileModules {
         "alias-tips"
     )
 
-    $modules += Get-ChildItem -Path $PSScriptRoot -Recurse -Filter *.ps1 -File |
+    $scriptDirs = @(
+        "$PSScriptRoot\aliases-keybinds",
+        "$PSScriptRoot\completions",
+        "$PSScriptRoot\scripts-functions",
+        "$PSScriptRoot\Scripts",
+        "$PSScriptRoot\bootstrap-packages"
+    )
+
+    $modules += Get-ChildItem -Path $scriptDirs -Recurse -Filter *.ps1 -File -ErrorAction SilentlyContinue |
         ForEach-Object {
             Select-String `
                 -Path $_.FullName `
-                -Pattern 'Import-Module\s+([A-Za-z0-9_.\-]+)' `
+                -Pattern 'Import-Module\s+([A-Za-z][A-Za-z0-9_.\-]*)' `
                 -AllMatches
         } |
         ForEach-Object { $_.Matches } |
@@ -85,7 +93,7 @@ if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
 
     Invoke-Expression (& {
         oh-my-posh init pwsh `
-            --config "$PSScriptRoot\color.schemes-fonts\oh-my-rabbit.omp.json" |
+            --config "$PSScriptRoot\settings\oh-my-rabbit.omp.json" |
             Out-String
     })
 
@@ -115,6 +123,14 @@ Set-PSReadLineOption `
         Keyword   = '#8367c7'
         Error     = '#FF6347'
     }
+
+Set-PSReadLineKeyHandler `
+    -Key 'UpArrow' `
+    -Function HistorySearchBackward
+
+Set-PSReadLineKeyHandler `
+    -Key 'DownArrow' `
+    -Function HistorySearchForward
 
 Set-PSReadLineKeyHandler `
     -Chord 'Ctrl+UpArrow' `
@@ -229,3 +245,5 @@ foreach ($dir in $ProfileScriptDirs) {
 
 Write-Host "⚡ Ctrl+f File Search | Alt+Space Smart Jump | Ctrl+y Yazi | Ctrl+Space Command Palette" `
     -ForegroundColor DarkGray
+
+
