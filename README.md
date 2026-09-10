@@ -120,7 +120,7 @@ Installing a program gives you a stock program. This step is what makes it *your
 | Source in repo | Deployed to | Notes |
 | --- | --- | --- |
 | `settings\atuin\config.toml` | `~\.config\atuin\config.toml` | |
-| `settings\git\gitconfig` | global git config | Merged setting by setting; an existing identity is never overwritten |
+| `settings\git\gitconfig` | global git config | Merged setting by setting. No identity is vendored (public repo) - you're prompted for `user.name`/`user.email` only if the machine has none |
 | `settings\git\ignore` | `~\.config\git\ignore` | Wired up as `core.excludesfile` |
 | `settings\opencode\opencode.jsonc` | `~\.config\opencode\` | Skipped if an `opencode.json` already exists |
 | `settings\notepad++\*.xml` | `%APPDATA%\Notepad++\` | `__USERPROFILE__` token swapped for the real path; skipped while Notepad++ is running |
@@ -243,7 +243,8 @@ Long-running or failed commands fire a toast and a terminal bell automatically �
 
 - Everything is path-relative (`$PSScriptRoot`) or `$HOME`-based — no hardcoded usernames — so it works regardless of the profile location or OneDrive redirection.
 - `zoxide`, `atuin`, and `oh-my-posh` are only initialized if the tool is installed.
-- The vendored `gitconfig` supplies an identity only when the machine has none; behavioural settings (the `git@github.com:` URL rewrite, the global ignore file) are always applied.
+- The vendored `gitconfig` carries **no name or email** - this repo is public. `deploy-configs.ps1` prompts for them on a machine that has none, and never touches an existing identity. Behavioural settings (the `git@github.com:` URL rewrite, the global ignore file) are always applied.
+- That URL rewrite means every HTTPS GitHub clone becomes SSH on any machine this config is deployed to, so `git pull` there needs working SSH keys.
 - `.gitattributes` normalizes line endings to LF in the repo and CRLF in the working copy, which is what silences git's "LF will be replaced by CRLF" warnings.
 - `ls`, `ll`, `la` and `lt` are functions, not aliases, so they can pass a path and extra flags through to `eza`. PowerShell's built-in `ls` alias is removed at load time - an alias would outrank the function and silently drop the view flags.
 - Three things wrap the prompt: oh-my-posh, `notify.ps1` and `YouShouldUse`. `Reload-Profile` unwinds that chain before re-sourcing, because a dot-sourced reload runs in the function's scope and can't regenerate oh-my-posh's prompt - without unwinding, the wrappers wrap each other and overflow the call stack.

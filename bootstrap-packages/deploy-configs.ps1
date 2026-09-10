@@ -151,33 +151,42 @@ else {
 
     $template = Get-Content -LiteralPath $gitTemplate -Raw
 
-    # Identity comes from the template only when this machine has none.
-    if ($template -match '(?m)^\s*name\s*=\s*(.+)$') {
-        Set-GitGlobal -Key "user.name"  -Value $Matches[1].Trim() -OnlyIfUnset
-    }
+    # No identity is vendored - this repo is public. Take it from the template
+    # if one is there, otherwise ask, but only when this machine has none:
+    # without user.name and user.email, commits fail outright with
+    # "unable to auto-detect email address" on a fresh install.
+    function Set-GitIdentity {
+        param(
+            [string]$Key,
+            [string]$TemplateKey,
+            [string]$Example
+        )
 
-    # No email is vendored - this repo is public. Ask for one only if this
-    # machine has none, so commits don't fail with "unable to auto-detect
-    # email address" on a fresh install.
-    $currentEmail = git config --global --get user.email 2>$null
+        $current = git config --global --get $Key 2>$null
 
-    if ($currentEmail) {
-        Write-Ok "git user.email already set ($currentEmail) - left alone"
-    }
-    elseif ($template -match '(?m)^\s*email\s*=\s*(.+)$') {
-        Set-GitGlobal -Key "user.email" -Value $Matches[1].Trim() -OnlyIfUnset
-    }
-    else {
-        $answer = Read-Host "`nNo git user.email is set on this machine. Enter one now (blank to skip)"
+        if ($current) {
+            Write-Ok "git $Key already set ($current) - left alone"
+            return
+        }
+
+        if ($template -match ('(?m)^\s*' + $TemplateKey + '\s*=\s*(.+)$')) {
+            Set-GitGlobal -Key $Key -Value $Matches[1].Trim() -OnlyIfUnset
+            return
+        }
+
+        $answer = Read-Host "`nNo git $Key is set on this machine. Enter one now (blank to skip)"
 
         if ($answer -and $answer.Trim()) {
-            git config --global user.email $answer.Trim()
-            Write-Ok "git user.email = $($answer.Trim())"
+            git config --global $Key $answer.Trim()
+            Write-Ok "git $Key = $($answer.Trim())"
         }
         else {
-            Write-Info "Skipped - set it later with: git config --global user.email you@example.com"
+            Write-Info "Skipped - set it later with: git config --global $Key $Example"
         }
     }
+
+    Set-GitIdentity -Key "user.name"  -TemplateKey "name"  -Example '"Your Name"'
+    Set-GitIdentity -Key "user.email" -TemplateKey "email" -Example "you@example.com"
 
     # Behavioural settings are applied unconditionally.
     Set-GitGlobal -Key 'url.git@github.com:.insteadOf' -Value "https://github.com/"
