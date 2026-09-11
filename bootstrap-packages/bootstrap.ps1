@@ -10,13 +10,39 @@ Set-PSRepository PSGallery `
     -ErrorAction SilentlyContinue
 
 function Test-CommandExists {
+    <#
+        Windows ships harmless placeholder "App Execution Alias" stubs for
+        python.exe/python3.exe (and others) under WindowsApps even when
+        nothing is actually installed - Get-Command resolves them fine, but
+        running one just opens the Microsoft Store. Without filtering those
+        out, this function reports python as already installed and the
+        package loop below never actually installs it.
+    #>
     param([string]$Command)
 
     if ([string]::IsNullOrWhiteSpace($Command)) {
         return $false
     }
 
-    return [bool](Get-Command $Command -ErrorAction SilentlyContinue)
+    $cmd = Get-Command $Command -ErrorAction SilentlyContinue
+
+    if (-not $cmd) {
+        return $false
+    }
+
+    if ($cmd.Source -like "*\WindowsApps\*") {
+
+        # These stubs are 0-byte reparse points (PowerShell doesn't surface
+        # their AppExecLink tag as a recognized -LinkType, so checking that
+        # comes back empty too - size is the reliable signal).
+        $item = Get-Item -LiteralPath $cmd.Source -ErrorAction SilentlyContinue
+
+        if ($item -and $item.Length -eq 0 -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Refresh-Path {
@@ -173,9 +199,11 @@ $Packages = @(
         TestPaths = @("$env:ProgramFiles\nodejs\node.exe")
     },
     @{
+        # winget --exact matches Id case-sensitively - "tailscale.tailscale"
+        # (lowercase) doesn't match the real Id and silently fails every time.
         Name      = "tailscale"
         Command   = "tailscale"
-        WingetId  = "tailscale.tailscale"
+        WingetId  = "Tailscale.Tailscale"
         ChocoId   = "tailscale"
         TestPaths = @("$env:ProgramFiles\Tailscale\tailscale.exe")
     },
@@ -192,9 +220,11 @@ $Packages = @(
         ChocoId  = "oh-my-posh"
     },
     @{
+        # Same case-sensitivity issue as tailscale above - the real Id is
+        # "Atuinsh.Atuin".
         Name     = "atuin"
         Command  = "atuin"
-        WingetId = "atuinsh.atuin"
+        WingetId = "Atuinsh.Atuin"
         ChocoId  = "atuin"
     },
     @{
@@ -352,12 +382,16 @@ $Packages = @(
         TestPaths = @("$env:ProgramFiles\Winaero Tweaker\WinaeroTweaker.exe")
     },
     @{
+        # This winget package is portable, not an installer - it lands as
+        # shutup10.exe under WinGet\Packages with a PATH shim in WinGet\Links,
+        # not under Program Files. The old TestPaths never matched, so a
+        # successful install was reported as a failure on every run.
         Name      = "shutup10"
-        Command   = ""
+        Command   = "shutup10"
         WingetId  = "OO-Software.ShutUp10"
         ChocoId   = ""
         TestPaths = @(
-            "${env:ProgramFiles(x86)}\O&O ShutUp10\OOSU10.exe"
+            "$env:LOCALAPPDATA\Microsoft\WinGet\Links\shutup10.exe"
         )
     },
     @{
@@ -509,10 +543,15 @@ function Install-OpenCam {
         return
     }
 
+    # The real install path is checked first - Get-Command "python" resolves
+    # to Windows' harmless WindowsApps App Execution Alias stub even when
+    # Python isn't installed at all, and that stub exists on disk (so a
+    # plain Test-Path check on it passes) but only opens the Microsoft Store
+    # when run.
     $python = @(
-        (Get-Command python -ErrorAction SilentlyContinue).Source,
-        "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe"
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+        "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
+        (Get-Command python -ErrorAction SilentlyContinue).Source
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) -and $_ -notlike "*\WindowsApps\*" } | Select-Object -First 1
 
     if (-not $python) {
         Write-Warning "⚠️ Python not found; skipping OpenCam."

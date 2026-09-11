@@ -9,11 +9,13 @@
       1. Installs the prerequisites bootstrap.ps1 itself depends on
          (winget check, git, PowerShell 7, Node.js).
       2. Puts this repo in the PowerShell 7 profile folder - OneDrive-aware,
-         backing up anything already there.
-      3. Installs the global npm packages the profile's aliases point at.
-      4. Hands off to bootstrap-packages\bootstrap.ps1 under pwsh, which
+         updating an existing clone in place rather than re-cloning it.
+      3. Hands off to bootstrap-packages\bootstrap.ps1 under pwsh, which
          installs every app, CLI tool, PowerShell module and font, then
          deploys the app configs vendored in settings\.
+      4. Installs the global npm packages the profile's aliases point at,
+         last and with a timeout - openclaw in particular is a large
+         package, and everything above matters more than it does.
 
     Runs from Windows PowerShell 5.1 or PowerShell 7, and is safe to re-run:
     every step checks before it acts.
@@ -217,9 +219,44 @@ $runningFromClone = $scriptRoot -and
 $alreadyInPlace = $runningFromClone -and
     ((Resolve-Path -LiteralPath $scriptRoot).Path.TrimEnd('\') -ieq $Destination.TrimEnd('\'))
 
+function Update-GitCloneInPlace {
+    # Re-running the one-liner (irm | iex) always has an empty $PSScriptRoot,
+    # so $runningFromClone is never true for it - without this, every repeat
+    # run on an already-installed machine would re-clone to a temp folder and
+    # back up the destination, piling up "PowerShell.bak-<timestamp>" folders
+    # even though nothing actually changed.
+    param([string]$Path, [string]$RepoUrl, [string]$Branch)
+
+    if (-not (Test-CommandExists "git")) { return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $Path ".git"))) { return $false }
+
+    $statusOut = git -C $Path status --porcelain 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+
+    if ($statusOut) {
+        $backup = "$Path.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Write-Info "Local changes found in $Path - backing them up to $backup before updating"
+        Copy-Item -LiteralPath $Path -Destination $backup -Recurse -Force
+    }
+
+    git -C $Path fetch --depth 1 origin $Branch 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { return $false }
+
+    git -C $Path checkout -B $Branch "origin/$Branch" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { return $false }
+
+    git -C $Path reset --hard "origin/$Branch" 2>&1 | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
 if ($alreadyInPlace) {
 
     Write-Ok "Already running from the profile folder - nothing to copy"
+    $RepoRoot = $Destination
+}
+elseif ((-not $Force) -and (Update-GitCloneInPlace -Path $Destination -RepoUrl $RepoUrl -Branch $Branch)) {
+
+    Write-Ok "Profile folder already present - updated to latest '$Branch' in place"
     $RepoRoot = $Destination
 }
 else {
@@ -294,46 +331,15 @@ else {
 }
 
 # =========================================================
-# 3. Global npm packages the profile's aliases point at
+# 3. Hand off to the package bootstrap
 # =========================================================
-
-Write-Step "npm packages"
-
-if ($nodeOk -and (Test-CommandExists "npm")) {
-
-    $npmPackages = @(
-        @{ Name = "openclaw";                  Command = "openclaw" },
-        @{ Name = "@anthropic-ai/claude-code"; Command = "claude"   }
-    )
-
-    foreach ($pkg in $npmPackages) {
-
-        if (Test-CommandExists $pkg.Command) {
-            Write-Ok "$($pkg.Name) already installed"
-            continue
-        }
-
-        Write-Info "Installing $($pkg.Name) ..."
-
-        npm install -g $pkg.Name 2>&1 | Out-Null
-
-        Update-SessionPath
-
-        if (Test-CommandExists $pkg.Command) {
-            Write-Ok "$($pkg.Name) installed"
-        }
-        else {
-            Write-Bad "Couldn't install $($pkg.Name) - run 'npm install -g $($pkg.Name)' by hand"
-        }
-    }
-}
-else {
-    Write-Bad "Node/npm unavailable - skipped openclaw and claude-code"
-}
-
-# =========================================================
-# 4. Hand off to the package bootstrap
-# =========================================================
+#
+# This runs before the npm globals below on purpose: openclaw in particular
+# is a huge package (60+ direct deps, native modules, a postinstall step)
+# and can take much longer than a typical `npm install -g` - if something
+# times out or kills the process while it's working, everything in
+# bootstrap.ps1 (winget packages, PS modules, fonts, terminal/app configs)
+# should already be done rather than never having run at all.
 
 if ($SkipBootstrap) {
 
@@ -358,6 +364,78 @@ if (-not $pwshExe) {
 }
 
 & $pwshExe -NoProfile -ExecutionPolicy Bypass -File $bootstrap
+
+# =========================================================
+# 4. Global npm packages the profile's aliases point at
+# =========================================================
+
+Write-Step "npm packages"
+
+function Install-NpmGlobal {
+    <#
+        openclaw in particular pulls in ~65 direct dependencies (hundreds
+        transitively), native modules and a postinstall step, so a plain
+        blocking `npm install -g` can run for many minutes with zero console
+        output - indistinguishable from a hang, and fatal to whatever is
+        driving this script if it enforces its own timeout. Running it as a
+        job with an explicit timeout means a slow or stuck install is
+        reported and skipped instead of wedging the whole installer.
+    #>
+    param(
+        [string]$Name,
+        [string]$Command,
+        [int]$TimeoutSeconds = 900
+    )
+
+    if (Test-CommandExists $Command) {
+        Write-Ok "$Name already installed"
+        return
+    }
+
+    $npmCmd = (Get-Command npm -ErrorAction SilentlyContinue).Source
+
+    if (-not $npmCmd) {
+        Write-Bad "npm not found on PATH"
+        return
+    }
+
+    Write-Info "Installing $Name ... (this can take several minutes the first time)"
+
+    $job = Start-Job -ScriptBlock {
+        param($npmCmd, $pkgName)
+        & $npmCmd install -g $pkgName 2>&1
+    } -ArgumentList $npmCmd, $Name
+
+    $finished = Wait-Job -Job $job -Timeout $TimeoutSeconds
+
+    if (-not $finished) {
+        Stop-Job -Job $job -ErrorAction SilentlyContinue
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        Write-Bad "$Name timed out after $([int]($TimeoutSeconds / 60)) min - run it by hand: npm install -g $Name"
+        return
+    }
+
+    $output = Receive-Job -Job $job -ErrorAction SilentlyContinue
+    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+
+    Update-SessionPath
+
+    if (Test-CommandExists $Command) {
+        Write-Ok "$Name installed"
+    }
+    else {
+        Write-Bad "Couldn't install $Name - run 'npm install -g $Name' by hand"
+        $output | Select-Object -Last 15 | ForEach-Object { Write-Host "     $_" -ForegroundColor DarkGray }
+    }
+}
+
+if ($nodeOk -and (Test-CommandExists "npm")) {
+    Install-NpmGlobal -Name "openclaw" -Command "openclaw"
+    Install-NpmGlobal -Name "@anthropic-ai/claude-code" -Command "claude"
+}
+else {
+    Write-Bad "Node/npm unavailable - skipped openclaw and claude-code"
+}
 
 Write-Step "Finished"
 Write-Host "     Open a new pwsh window (or run 'reload') to load the profile." -ForegroundColor Gray

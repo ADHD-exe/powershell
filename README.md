@@ -69,10 +69,10 @@ From any PowerShell window (Windows PowerShell 5.1 or PowerShell 7):
 `install.ps1` is the new-machine entrypoint. It:
 
 1. Checks for **winget**, then installs **git**, **PowerShell 7** and **Node.js LTS** if they're missing.
-2. Works out the real PowerShell 7 profile folder (asking `pwsh` directly, so OneDrive redirection is handled) and places the repo there, backing up anything already present.
+2. Works out the real PowerShell 7 profile folder (asking `pwsh` directly, so OneDrive redirection is handled) and places the repo there. If that folder is already a clone of this repo, it's updated in place (`git fetch` + `reset --hard`) instead of being re-cloned and backed up on every run; anything else already present gets backed up first.
 3. Sets the execution policy to `RemoteSigned` and writes `powershell.config.json`.
-4. Installs the global npm packages the aliases point at (`openclaw`, `@anthropic-ai/claude-code`).
-5. Hands off to `bootstrap-packages\bootstrap.ps1`.
+4. Hands off to `bootstrap-packages\bootstrap.ps1`.
+5. Installs the global npm packages the aliases point at (`openclaw`, `@anthropic-ai/claude-code`), last and under a 15-minute timeout - `openclaw` in particular is a large package (60+ direct dependencies, native modules, a postinstall step), and everything above matters more than it does.
 
 No admin rights are required: every registry and font change is per-user (`HKCU`).
 

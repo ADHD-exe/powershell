@@ -192,6 +192,39 @@ else {
     Set-GitGlobal -Key 'url.git@github.com:.insteadOf' -Value "https://github.com/"
     Set-GitGlobal -Key "core.excludesfile" -Value (Join-Path $HOME ".config\git\ignore")
 
+    # The rewrite above turns every https://github.com/... clone into an ssh
+    # one, including the ones bootstrap.ps1 does with plain https URLs
+    # (YouShouldUse, OpenCam, Freyja). On a machine that has never run an ssh
+    # command against GitHub before, there's no known_hosts entry for it, and
+    # ssh refuses the connection ("Host key verification failed") instead of
+    # prompting - there's no TTY to prompt on a scripted install. Seeding
+    # known_hosts here is what lets those clones succeed on a first run.
+    $knownHosts = Join-Path $HOME ".ssh\known_hosts"
+
+    $alreadyTrusted = (Test-Path -LiteralPath $knownHosts) -and
+        (Select-String -LiteralPath $knownHosts -Pattern "^github\.com " -Quiet -ErrorAction SilentlyContinue)
+
+    if ($alreadyTrusted) {
+        Write-Ok "github.com already in known_hosts"
+    }
+    elseif (Get-Command ssh-keyscan -ErrorAction SilentlyContinue) {
+
+        New-Item -ItemType Directory -Path (Split-Path $knownHosts -Parent) -Force | Out-Null
+
+        $keys = ssh-keyscan -t ed25519,rsa github.com 2>$null
+
+        if ($keys) {
+            Add-Content -LiteralPath $knownHosts -Value $keys
+            Write-Ok "Trusted github.com's SSH host key"
+        }
+        else {
+            Write-Bad "ssh-keyscan got nothing back for github.com - ssh clones (YouShouldUse, OpenCam, Freyja) may fail"
+        }
+    }
+    else {
+        Write-Bad "ssh-keyscan not found - can't pre-trust github.com; ssh clones may fail with 'Host key verification failed'"
+    }
+
     if (Get-Command git-lfs -ErrorAction SilentlyContinue) {
         git lfs install --skip-repo 2>&1 | Out-Null
         Write-Ok "git-lfs filters registered"
