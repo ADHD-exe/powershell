@@ -10,39 +10,13 @@ Set-PSRepository PSGallery `
     -ErrorAction SilentlyContinue
 
 function Test-CommandExists {
-    <#
-        Windows ships harmless placeholder "App Execution Alias" stubs for
-        python.exe/python3.exe (and others) under WindowsApps even when
-        nothing is actually installed - Get-Command resolves them fine, but
-        running one just opens the Microsoft Store. Without filtering those
-        out, this function reports python as already installed and the
-        package loop below never actually installs it.
-    #>
     param([string]$Command)
 
     if ([string]::IsNullOrWhiteSpace($Command)) {
         return $false
     }
 
-    $cmd = Get-Command $Command -ErrorAction SilentlyContinue
-
-    if (-not $cmd) {
-        return $false
-    }
-
-    if ($cmd.Source -like "*\WindowsApps\*") {
-
-        # These stubs are 0-byte reparse points (PowerShell doesn't surface
-        # their AppExecLink tag as a recognized -LinkType, so checking that
-        # comes back empty too - size is the reliable signal).
-        $item = Get-Item -LiteralPath $cmd.Source -ErrorAction SilentlyContinue
-
-        if ($item -and $item.Length -eq 0 -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-            return $false
-        }
-    }
-
-    return $true
+    return [bool](Get-Command $Command -ErrorAction SilentlyContinue)
 }
 
 function Refresh-Path {
@@ -182,8 +156,16 @@ $Packages = @(
     },
     @{
         # OpenCam is a Python app - see Install-OpenCam below.
+        #
+        # Command is deliberately blank: Windows ships a placeholder
+        # python.exe "App Execution Alias" under WindowsApps that
+        # Get-Command resolves fine even when Python isn't installed at all
+        # (running it just opens the Microsoft Store) - and it's
+        # indistinguishable by file metadata from the alias a real Python
+        # install also gets there, so Test-CommandExists can't be trusted
+        # for this one. TestPaths against the real install location is.
         Name      = "python 3"
-        Command   = "python"
+        Command   = ""
         WingetId  = "Python.Python.3.14"
         ChocoId   = "python"
         TestPaths = @(
@@ -302,11 +284,14 @@ $Packages = @(
         ChocoId  = "powershell-core"
     },
     @{
+        # Installs to "Firefox Developer Edition\", not "Firefox\" - the old
+        # path never matched, so a successful install was reported as a
+        # failure on every run.
         Name      = "firefox developer edition"
         Command   = "firefox"
         WingetId  = "Mozilla.Firefox.DeveloperEdition"
         ChocoId   = "firefox-developer-edition"
-        TestPaths = @("$env:ProgramFiles\Firefox\firefox.exe")
+        TestPaths = @("$env:ProgramFiles\Firefox Developer Edition\firefox.exe")
     },
     @{
         Name      = "paint.net"
@@ -543,11 +528,11 @@ function Install-OpenCam {
         return
     }
 
-    # The real install path is checked first - Get-Command "python" resolves
-    # to Windows' harmless WindowsApps App Execution Alias stub even when
-    # Python isn't installed at all, and that stub exists on disk (so a
-    # plain Test-Path check on it passes) but only opens the Microsoft Store
-    # when run.
+    # WindowsApps paths are excluded outright: Get-Command "python" resolves
+    # to Windows' python.exe "App Execution Alias" there even when Python
+    # isn't installed at all (it just opens the Microsoft Store when run),
+    # and it's indistinguishable by file metadata from the alias a real
+    # install also gets - so the real, known install path wins unconditionally.
     $python = @(
         "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
         (Get-Command python -ErrorAction SilentlyContinue).Source
